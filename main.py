@@ -1,67 +1,82 @@
 import sys
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, 
-    QVBoxLayout, QLabel
+    QApplication, QMainWindow, QStackedWidget, QLabel
 )
 from PyQt5.QtCore import Qt
+from db import db
+from ui_login import LoginWidget
+
 
 class QuizApp(QMainWindow):
     """Main application window."""
     
     def __init__(self):
         super().__init__()
+        self.current_user = None  # Store logged-in user
         self.init_ui()
+        self.test_database_connection()
     
     def init_ui(self):
         """Initialize the user interface."""
-        # Window properties
         self.setWindowTitle("Advanced Quiz App")
-        self.setGeometry(100, 100, 800, 600)  # x, y, width, height
+        self.setGeometry(100, 100, 800, 600)
         
-        # Central widget (required for QMainWindow)
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        # Use QStackedWidget to switch between pages
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
         
-        # Layout
-        layout = QVBoxLayout()
-        central_widget.setLayout(layout)
+        # Page 0: Login
+        self.login_page = LoginWidget()
+        self.login_page.login_successful.connect(self.on_login_success)
+        self.stack.addWidget(self.login_page)
         
-        # Title label
-        title_label = QLabel("🎯 Welcome to the Advanced Quiz App")
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("""
-            font-size: 28px; 
-            font-weight: bold; 
-            color: #2c3e50;
-            margin: 20px;
+        # Page 1: Dashboard (placeholder for now)
+        self.dashboard_page = QLabel("Welcome to Dashboard!")
+        self.dashboard_page.setAlignment(Qt.AlignCenter)
+        self.dashboard_page.setStyleSheet("""
+            font-size: 32px;
+            font-weight: bold;
+            color: #27ae60;
         """)
-        layout.addWidget(title_label)
+        self.stack.addWidget(self.dashboard_page)
         
-        # Subtitle
-        subtitle_label = QLabel("Your journey to mastering Python, SQL, and Docker starts here")
-        subtitle_label.setAlignment(Qt.AlignCenter)
-        subtitle_label.setStyleSheet("""
-            font-size: 14px; 
-            color: #7f8c8d;
-            margin-bottom: 40px;
-        """)
-        layout.addWidget(subtitle_label)
+        # Start with login page
+        self.stack.setCurrentIndex(0)
+    
+    def test_database_connection(self):
+        """Test database connection on startup."""
+        if not db.connect():
+            # Show error dialog
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Database Error",
+                "Could not connect to PostgreSQL database.\n\n"
+                "Please ensure Docker is running:\n"
+                "  docker compose up -d"
+            )
+    
+    def on_login_success(self, user_data):
+        """Called when user logs in successfully.
         
-        # Database status (placeholder)
-        self.status_label = QLabel("📊 Database Status: Not Connected")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("""
-            font-size: 16px;
-            padding: 15px;
-            background-color: #f39c12;
-            color: white;
-            border-radius: 5px;
-            margin: 20px 40px;
-        """)
-        layout.addWidget(self.status_label)
+        Args:
+            user_data (tuple): (user_id, username)
+        """
+        user_id, username = user_data
+        self.current_user = user_data
         
-        # Add stretch to push everything to the top
-        layout.addStretch()
+        # Update dashboard with username
+        self.dashboard_page.setText(f"✅ Welcome, {username}!")
+        
+        # Switch to dashboard
+        self.stack.setCurrentIndex(1)
+        
+        print(f"✅ User {username} (ID: {user_id}) logged in")
+    
+    def closeEvent(self, event):
+        """Called when window is closed."""
+        db.disconnect()
+        event.accept()
 
 
 def main():
