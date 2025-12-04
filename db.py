@@ -66,6 +66,8 @@ class DatabaseManager:
         except Exception as e:
             print(f"❌ Test query failed: {e}")
             return None
+
+
     def authenticate_user(self, username, password):
         """Authenticate a user with username and password.
         
@@ -104,6 +106,33 @@ class DatabaseManager:
         except Exception as e:
             print(f"❌ Authentication error: {e}")
             return None
+
+
+    def get_categories(self):
+        """Get all quiz categories.
+        
+        Returns:
+            list: List of tuples [(id, name, description), ...]
+                  Empty list if query fails or no categories found
+        """
+        if not self.conn:
+            print("❌ No database connection")
+            return []
+        
+        try:
+            self.cursor.execute("""
+                SELECT id, name, description
+                FROM categories
+                ORDER BY name ASC
+            """)
+            categories = self.cursor.fetchall()
+            print(f"✅ Fetched {len(categories)} categories")
+            return categories
+        
+        except Exception as e:
+            print(f"❌ Error fetching categories: {e}")
+            return []
+    
 
 # Global instance (Singleton pattern)
 db = DatabaseManager()
