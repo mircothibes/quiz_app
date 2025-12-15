@@ -132,6 +132,37 @@ class DatabaseManager:
         except Exception as e:
             print(f"❌ Error fetching categories: {e}")
             return []
+
+    def get_questions_by_category(self, category_id):
+        """Get all questions for a specific category.
+        
+        Args:
+            category_id (int): Category ID
+        
+        Returns:
+            list: List of tuples [(id, question_text, correct_answer, 
+                   option_a, option_b, option_c, option_d), ...]
+        """
+        if not self.conn:
+            print("❌ No database connection")
+            return []
+        
+        try:
+            self.cursor.execute("""
+                SELECT id, question_text, correct_answer, 
+                       option_a, option_b, option_c, option_d
+                FROM questions
+                WHERE category_id = %s
+                ORDER BY id
+            """, (category_id,))
+            
+            questions = self.cursor.fetchall()
+            print(f"✅ Fetched {len(questions)} questions for category {category_id}")
+            return questions
+        
+        except Exception as e:
+            print(f"❌ Error fetching questions: {e}")
+            return []        
     
 
 # Global instance (Singleton pattern)

@@ -2,11 +2,14 @@ import sys
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QStackedWidget, QLabel
 )
+from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtCore import Qt
 from db import db
 from ui_login import LoginWidget
 from ui_dashboard import DashboardWidget
 from ui_categories import CategoryWidget
+from ui_results import ResultsWidget
+from ui_quiz import QuizWidget
 
 
 class QuizApp(QMainWindow):
@@ -39,8 +42,11 @@ class QuizApp(QMainWindow):
         self.stack.addWidget(self.categories_page)
         
         # Page 3: Quiz (placeholder)
-        self.quiz_page = self.create_placeholder("🎯 Quiz", "Coming soon...")
-        self.stack.addWidget(self.quiz_page)
+        self.results_page = ResultsWidget()
+        self.results_page.retake_quiz_clicked.connect(self.on_retake_quiz)
+        self.results_page.back_to_dashboard_clicked.connect(lambda: self.stack.setCurrentIndex(1))
+        self.results_page.back_to_categories_clicked.connect(self.show_categories)
+        self.stack.addWidget(self.results_page)        
         
         # Page 4: Admin (placeholder)
         self.admin_page = self.create_placeholder("➕ Admin", "Coming soon...")
@@ -51,7 +57,7 @@ class QuizApp(QMainWindow):
     def create_placeholder(self, title, message):
         """Create a placeholder page."""
         placeholder = QLabel(f"{title}\n\n{message}")
-        placeholder.setAlignment(Qt.AlignCenter)
+        placeholder.setAlignment(Qt.AlignCenter) # type: ignore[reportAttributeAccessIssue]
         placeholder.setStyleSheet("font-size: 24px; color: #7f8c8d;")
         return placeholder
     
@@ -92,15 +98,26 @@ class QuizApp(QMainWindow):
         self.stack.setCurrentIndex(4)
     
     def on_category_selected(self, category_id, category_name):
-        """Handle category selection.
-        
-        Args:
-            category_id (int): Selected category ID
-            category_name (str): Selected category name
-        """
-        print(f"📚 Starting quiz for category: {category_name} (ID: {category_id})")
-        # TODO: Load questions and show quiz page
-        self.stack.setCurrentIndex(3)  # Show quiz placeholder for now
+        """Handle category selection."""
+        print(f"📚 Loading quiz: {category_name} (ID: {category_id})")
+        self.quiz_page.load_quiz(category_id, category_name)
+        self.stack.setCurrentIndex(3)
+
+    def on_quiz_completed(self, results):
+        """Handle quiz completion."""
+        print(f"✅ Quiz completed!")
+        # For now, just show a message (results page coming next slide)
+        from PyQt5.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self, "Quiz Complete",
+            f"You answered {len(results['answers'])} questions!"
+        )
+        self.show_categories()
+
+    def on_retake_quiz(self, category_id, category_name):
+        """Handle quiz retake."""
+        self.quiz_page.load_quiz(category_id, category_name)
+        self.stack.setCurrentIndex(3)        
     
     def logout(self):
         """Log out."""
@@ -108,7 +125,7 @@ class QuizApp(QMainWindow):
         self.stack.setCurrentIndex(0)
         print("🚪 User logged out")
     
-    def closeEvent(self, event):
+    def closeEvent(self, event): # type: ignore[override]
         """Handle window close."""
         db.disconnect()
         event.accept()
