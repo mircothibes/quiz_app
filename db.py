@@ -1,169 +1,174 @@
+from __future__ import annotations
+
+import logging
+from typing import Any, Iterable, Optional, Sequence
+
 import psycopg2
 from psycopg2 import OperationalError
-import os
-from dotenv import load_dotenv
+from psycopg2.extensions import connection as PgConnection
 
-# Load environment variables from .env file
-load_dotenv()
+from config import load_config
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
     """Handles all PostgreSQL database interactions."""
-    
-    def __init__(self):
-        """Initialize database manager with credentials from .env"""
-        self.host = os.getenv('DB_HOST', 'localhost')
-        self.port = os.getenv('DB_PORT', '5432')
-        self.database = os.getenv('DB_NAME', 'quiz_app_db')
-        self.user = os.getenv('DB_USER', 'quiz_user')
-        self.password = os.getenv('DB_PASSWORD', 'quiz_password')
-        self.conn = None
-        self.cursor = None
-    
-    def connect(self):
-        """Establish connection to PostgreSQL database.
-        
+
+    def __init__(self) -> None:
+        self._conn: Optional[PgConnection] = None
+
+    def connect(self) -> bool:
+        """Establish a connection to PostgreSQL.
+
         Returns:
-            bool: True if connected successfully, False otherwise
+            bool: True if connected successfully, False otherwise.
         """
-        try:
-            self.conn = psycopg2.connect(
-                host=self.host,
-                port=self.port,
-                database=self.database,
-                user=self.user,
-                password=self.password
-            )
-            self.cursor = self.conn.cursor()
-            print(f"✅ Connected to PostgreSQL database: {self.database}")
+        if self._conn is not None and not self._conn.closed:
             return True
-        
-        except OperationalError as e:
-            print(f"❌ Database connection failed: {e}")
+
+        try:
+            cfg = load_config()
+            self._conn = psycopg2.connect(
+                host=cfg.host,
+                port=cfg.port,
+                dbname=cfg.name,
+                user=cfg.user,
+                password=cfg.password,
+                connect_timeout=5,
+                application_name="quiz_app",
+            )
+            self._conn.autocommit = False
+            logger.info("Connected to PostgreSQL database: %s", cfg.name)
+            return True
+
+        except (OperationalError, ValueError) as exc:
+            logger.exception("Database connection failed: %s", exc)
+            self._conn = None
             return False
-    
-    def disconnect(self):
+
+    def disconnect(self) -> None:
         """Close database connection safely."""
-        if self.cursor:
-            self.cursor.close()
-        if self.conn:
-            self.conn.close()
-            print("🔌 Database connection closed")
-    
-    def test_connection(self):
-        """Test the connection by running a simple query.
-        
-        Returns:
-            str: PostgreSQL version if successful, None otherwise
-        """
-        if not self.conn:
-            return None
-        
+        if self._conn is None:
+            return
+
         try:
-            self.cursor.execute("SELECT version();")
-            version = self.cursor.fetchone()[0]
-            return version
-        except Exception as e:
-            print(f"❌ Test query failed: {e}")
+            if not self._conn.closed:
+                self._conn.close()
+                logger.info("Database connection closed")
+        finally:
+            self._conn = None
+
+    def is_connected(self) -> bool:
+        """Return True if there is an open connection."""
+        return self._conn is not None and not self._conn.closed
+
+    def _ensure_connection(self) -> None:
+        if not self.is_connected():
+            raise RuntimeError("No database connection. Call db.connect() first.")
+
+    def fetch_one(self, query: str, params: Optional[Sequence[Any]] = None) -> Optional[tuple[Any, ...]]:
+        """Run a SELECT query and return a single row (or None)."""
+        self._ensure_connection()
+        assert self._conn is not None
+
+        with self._conn.cursor() as cur:
+            cur.execute(query, params)
+            row = cur.fetchone()
+            return row
+
+    def fetch_all(self, query: str, params: Optional[Sequence[Any]] = None) -> list[tuple[Any, ...]]:
+        """Run a SELECT query and return all rows (possibly empty)."""
+        self._ensure_connection()
+        assert self._conn is not None
+
+        with self._conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            return rows
+
+    def execute(self, query: str, params: Optional[Sequence[Any]] = None) -> None:
+        """Run an INSERT/UPDATE/DELETE query and commit."""
+        self._ensure_connection()
+        assert self._conn is not None
+
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(query, params)
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+
+    def test_connection(self) -> Optional[str]:
+        """Test the connection by returning the PostgreSQL version string."""
+        try:
+            row = self.fetch_one("SELECT version();")
+            return str(row[0]) if row else None
+        except Exception as exc:
+            logger.exception("Test query failed: %s", exc)
             return None
 
-
-    def authenticate_user(self, username, password):
+    def authenticate_user(self, username: str, password: str) -> Optional[tuple[int, str]]:
         """Authenticate a user with username and password.
-        
-        Args:
-            username (str): Username to check
-            password (str): Password to verify
-        
-        Returns:
-            tuple: (user_id, username) if successful, None otherwise
-        
-        WARNING: This uses plain-text password comparison!
-                 In production, use hashed passwords (bcrypt, argon2, etc.)
+
+        WARNING: This uses plain-text password comparison against `password_hash`.
+        In production, use hashed passwords (bcrypt, argon2, etc.).
         """
-        if not self.conn:
-            print("❌ No database connection")
-            return None
-        
         try:
-            self.cursor.execute(
+            row = self.fetch_one(
                 """
-                SELECT id, username 
-                FROM users 
+                SELECT id, username
+                FROM users
                 WHERE username = %s AND password_hash = %s
                 """,
-                (username, password)
+                (username, password),
             )
-            user = self.cursor.fetchone()
-            
-            if user:
-                print(f"✅ User authenticated: {user[1]}")
-                return user  # Returns (id, username)
-            else:
-                print("❌ Invalid credentials")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Authentication error: {e}")
+            if row:
+                user_id, user_name = int(row[0]), str(row[1])
+                logger.info("User authenticated: %s", user_name)
+                return user_id, user_name
+
+            logger.warning("Invalid credentials for username=%s", username)
             return None
 
+        except Exception as exc:
+            logger.exception("Authentication error: %s", exc)
+            return None
 
-    def get_categories(self):
-        """Get all quiz categories.
-        
-        Returns:
-            list: List of tuples [(id, name, description), ...]
-                  Empty list if query fails or no categories found
-        """
-        if not self.conn:
-            print("❌ No database connection")
-            return []
-        
+    def get_categories(self) -> list[tuple[int, str, str]]:
+        """Get all quiz categories."""
         try:
-            self.cursor.execute("""
+            rows = self.fetch_all(
+                """
                 SELECT id, name, description
                 FROM categories
                 ORDER BY name ASC
-            """)
-            categories = self.cursor.fetchall()
-            print(f"✅ Fetched {len(categories)} categories")
-            return categories
-        
-        except Exception as e:
-            print(f"❌ Error fetching categories: {e}")
+                """
+            )
+            return [(int(r[0]), str(r[1]), str(r[2] or "")) for r in rows]
+        except Exception as exc:
+            logger.exception("Error fetching categories: %s", exc)
             return []
 
-    def get_questions_by_category(self, category_id):
-        """Get all questions for a specific category.
-        
-        Args:
-            category_id (int): Category ID
-        
-        Returns:
-            list: List of tuples [(id, question_text, correct_answer, 
-                   option_a, option_b, option_c, option_d), ...]
-        """
-        if not self.conn:
-            print("❌ No database connection")
-            return []
-        
+    def get_questions_by_category(self, category_id: int) -> list[tuple[Any, ...]]:
+        """Get all questions for a specific category."""
         try:
-            self.cursor.execute("""
-                SELECT id, question_text, correct_answer, 
+            rows = self.fetch_all(
+                """
+                SELECT id, question_text, correct_answer,
                        option_a, option_b, option_c, option_d
                 FROM questions
                 WHERE category_id = %s
                 ORDER BY id
-            """, (category_id,))
-            
-            questions = self.cursor.fetchall()
-            print(f"✅ Fetched {len(questions)} questions for category {category_id}")
-            return questions
-        
-        except Exception as e:
-            print(f"❌ Error fetching questions: {e}")
-            return []        
-    
+                """,
+                (category_id,),
+            )
+            return rows
+        except Exception as exc:
+            logger.exception("Error fetching questions for category %s: %s", category_id, exc)
+            return []
+
 
 # Global instance (Singleton pattern)
 db = DatabaseManager()
