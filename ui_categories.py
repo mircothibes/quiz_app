@@ -1,35 +1,45 @@
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QPushButton, QListWidget, QListWidgetItem, QMessageBox
-)
+import logging
+from typing import Any, List, Tuple
+
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 from db import db
+
+logger = logging.getLogger(__name__)
 
 
 class CategoryWidget(QWidget):
     """Widget to display and select quiz categories."""
-    
-    # Signals
+
     category_selected = pyqtSignal(int, str)  # (category_id, category_name)
     back_clicked = pyqtSignal()
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         super().__init__()
-        self.categories = []
-        self.init_ui()
-        self.load_categories()
-    
-    def init_ui(self):
-        """Initialize the user interface."""
+        self.categories: List[Tuple[int, str, str]] = []
+        self._build_ui()
+        # NOTE: We intentionally do not auto-load here.
+        # The main window should call load_categories() when navigating to this page.
+
+    def _build_ui(self) -> None:
         layout = QVBoxLayout()
         self.setLayout(layout)
-        
-        # Header
+
         header_layout = QHBoxLayout()
-        
-        # Back button
-        back_btn = QPushButton("← Back to Dashboard")
-        back_btn.setStyleSheet("""
+
+        self.back_btn = QPushButton("← Back to Dashboard")
+        self.back_btn.setStyleSheet(
+            """
             QPushButton {
                 background-color: #95a5a6;
                 color: white;
@@ -41,15 +51,16 @@ class CategoryWidget(QWidget):
             QPushButton:hover {
                 background-color: #7f8c8d;
             }
-        """)
-        back_btn.clicked.connect(self.back_clicked.emit)
-        header_layout.addWidget(back_btn)
-        
+            """
+        )
+        self.back_btn.clicked.connect(self.back_clicked.emit)
+        header_layout.addWidget(self.back_btn)
+
         header_layout.addStretch()
-        
-        # Refresh button
-        refresh_btn = QPushButton("🔄 Refresh")
-        refresh_btn.setStyleSheet("""
+
+        self.refresh_btn = QPushButton("🔄 Refresh")
+        self.refresh_btn.setStyleSheet(
+            """
             QPushButton {
                 background-color: #3498db;
                 color: white;
@@ -61,36 +72,39 @@ class CategoryWidget(QWidget):
             QPushButton:hover {
                 background-color: #2980b9;
             }
-        """)
-        refresh_btn.clicked.connect(self.load_categories)
-        header_layout.addWidget(refresh_btn)
-        
+            """
+        )
+        self.refresh_btn.clicked.connect(self.load_categories)
+        header_layout.addWidget(self.refresh_btn)
+
         layout.addLayout(header_layout)
-        
-        # Title
+
         title = QLabel("📚 Select a Quiz Category")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("""
+        title.setStyleSheet(
+            """
             font-size: 26px;
             font-weight: bold;
             color: #2c3e50;
             margin: 20px;
-        """)
+            """
+        )
         layout.addWidget(title)
-        
-        # Subtitle
+
         subtitle = QLabel("Choose a topic to start your quiz")
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("""
+        subtitle.setStyleSheet(
+            """
             font-size: 14px;
             color: #7f8c8d;
             margin-bottom: 20px;
-        """)
+            """
+        )
         layout.addWidget(subtitle)
-        
-        # Category list
+
         self.category_list = QListWidget()
-        self.category_list.setStyleSheet("""
+        self.category_list.setStyleSheet(
+            """
             QListWidget {
                 border: 2px solid #bdc3c7;
                 border-radius: 8px;
@@ -109,23 +123,26 @@ class CategoryWidget(QWidget):
                 background-color: #3498db;
                 color: white;
             }
-        """)
+            """
+        )
         self.category_list.itemDoubleClicked.connect(self.on_category_double_clicked)
+        self.category_list.itemSelectionChanged.connect(self.on_selection_changed)
         layout.addWidget(self.category_list)
-        
-        # Info label
+
         self.info_label = QLabel("")
         self.info_label.setAlignment(Qt.AlignCenter)
-        self.info_label.setStyleSheet("""
+        self.info_label.setStyleSheet(
+            """
             font-size: 12px;
             color: #7f8c8d;
             margin: 10px;
-        """)
+            """
+        )
         layout.addWidget(self.info_label)
-        
-        # Select button
-        select_btn = QPushButton("Start Quiz with Selected Category")
-        select_btn.setStyleSheet("""
+
+        self.select_btn = QPushButton("Start Quiz with Selected Category")
+        self.select_btn.setStyleSheet(
+            """
             QPushButton {
                 background-color: #27ae60;
                 color: white;
@@ -142,65 +159,85 @@ class CategoryWidget(QWidget):
             QPushButton:disabled {
                 background-color: #bdc3c7;
             }
-        """)
-        select_btn.clicked.connect(self.on_select_category)
-        layout.addWidget(select_btn)
-        self.select_btn = select_btn
-        self.select_btn.setEnabled(False)  # Disabled until selection
-        
-        # Connect selection change
-        self.category_list.itemSelectionChanged.connect(self.on_selection_changed)
-    
-    def load_categories(self):
+            """
+        )
+        self.select_btn.clicked.connect(self.on_select_category)
+        self.select_btn.setEnabled(False)
+        layout.addWidget(self.select_btn)
+
+    def _set_loading(self, is_loading: bool) -> None:
+        self.refresh_btn.setDisabled(is_loading)
+        self.back_btn.setDisabled(is_loading)
+        self.select_btn.setDisabled(is_loading or len(self.category_list.selectedItems()) == 0)
+        self.category_list.setDisabled(is_loading)
+
+        if is_loading:
+            self.info_label.setText("Loading categories...")
+            self.info_label.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+
+    def load_categories(self) -> None:
         """Load categories from database and populate list."""
+        self._set_loading(True)
         self.category_list.clear()
-        self.categories = db.get_categories()
-        
-        if not self.categories:
-            self.info_label.setText("⚠️ No categories found. Add some in the admin panel!")
+        self.categories = []
+
+        try:
+            if not db.is_connected():
+                if not db.connect():
+                    self.info_label.setText("❌ Database connection failed.")
+                    self.info_label.setStyleSheet("color: #e74c3c; font-size: 14px;")
+                    return
+
+            self.categories = db.get_categories()
+
+            if not self.categories:
+                self.info_label.setText("⚠️ No categories found. Add some in the admin panel!")
+                self.info_label.setStyleSheet("color: #e74c3c; font-size: 14px;")
+                return
+
+            for cat_id, name, description in self.categories:
+                item = QListWidgetItem()
+                item_text = f"{name}\n  {description or 'No description'}"
+                item.setText(item_text)
+                item.setData(Qt.UserRole, cat_id)
+                item.setToolTip(description or "")
+                self.category_list.addItem(item)
+
+            self.info_label.setText(f"✅ Found {len(self.categories)} categories")
+            self.info_label.setStyleSheet("color: #27ae60; font-size: 12px;")
+
+        except Exception as exc:
+            logger.exception("Error loading categories: %s", exc)
+            QMessageBox.critical(
+                self,
+                "Error",
+                "An unexpected error occurred while loading categories.\n\nPlease try again.",
+            )
+            self.info_label.setText("❌ Failed to load categories.")
             self.info_label.setStyleSheet("color: #e74c3c; font-size: 14px;")
-            return
-        
-        # Populate list
-        for cat_id, name, description in self.categories:
-            item = QListWidgetItem()
-            
-            # Format: Name (bold) + description
-            item_text = f"{name}\n  {description or 'No description'}"
-            item.setText(item_text)
-            
-            # Store category ID in item data
-            item.setData(Qt.UserRole, cat_id)
-            
-            self.category_list.addItem(item)
-        
-        self.info_label.setText(f"✅ Found {len(self.categories)} categories")
-        self.info_label.setStyleSheet("color: #27ae60; font-size: 12px;")
-    
-    def on_selection_changed(self):
-        """Handle category selection change."""
+        finally:
+            self._set_loading(False)
+
+    def on_selection_changed(self) -> None:
         selected_items = self.category_list.selectedItems()
         self.select_btn.setEnabled(len(selected_items) > 0)
-    
-    def on_select_category(self):
-        """Handle 'Select Category' button click."""
+
+    def on_select_category(self) -> None:
         selected_items = self.category_list.selectedItems()
-        
         if not selected_items:
             QMessageBox.warning(self, "No Selection", "Please select a category first.")
             return
-        
+
         item = selected_items[0]
-        category_id = item.data(Qt.UserRole)
-        category_name = item.text().split('\n')[0]  # Get first line (name)
-        
-        print(f"✅ Selected category: {category_name} (ID: {category_id})")
+        category_id = int(item.data(Qt.UserRole))
+        category_name = item.text().split("\n")[0].strip()
+
+        logger.info("Selected category: %s (id=%s)", category_name, category_id)
         self.category_selected.emit(category_id, category_name)
-    
-    def on_category_double_clicked(self, item):
-        """Handle double-click on a category (quick select)."""
-        category_id = item.data(Qt.UserRole)
-        category_name = item.text().split('\n')[0]
-        
-        print(f"✅ Double-clicked category: {category_name} (ID: {category_id})")
+
+    def on_category_double_clicked(self, item: QListWidgetItem) -> None:
+        category_id = int(item.data(Qt.UserRole))
+        category_name = item.text().split("\n")[0].strip()
+
+        logger.info("Double-clicked category: %s (id=%s)", category_name, category_id)
         self.category_selected.emit(category_id, category_name)
