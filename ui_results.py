@@ -1,299 +1,224 @@
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QPushButton, QScrollArea, QFrame
-)
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+logger = logging.getLogger(__name__)
+
+LETTERS = ["A", "B", "C", "D"]
 
 
 class ResultsWidget(QWidget):
     """Widget to display quiz results."""
-    
-    # Signals
+
     retake_quiz_clicked = pyqtSignal(int, str)  # (category_id, category_name)
     back_to_dashboard_clicked = pyqtSignal()
     back_to_categories_clicked = pyqtSignal()
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         super().__init__()
-        self.init_ui()
-    
-    def init_ui(self):
-        """Initialize UI."""
-        main_layout = QVBoxLayout()
-        self.setLayout(main_layout)
-        
-        # Score header container (will be populated dynamically)
-        self.score_container = QWidget()
-        main_layout.addWidget(self.score_container)
-        
-        # Scrollable results area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border: none;")
-        
-        self.results_widget = QWidget()
-        self.results_layout = QVBoxLayout()
-        self.results_widget.setLayout(self.results_layout)
-        
-        scroll.setWidget(self.results_widget)
-        main_layout.addWidget(scroll)
-        
-        # Action buttons
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addStretch()
-        
-        retake_btn = QPushButton("🔄 Retake Quiz")
-        retake_btn.setStyleSheet("""
-            background-color: #f39c12; color: white; border: none;
-            border-radius: 5px; padding: 12px 24px; font-size: 14px;
-            font-weight: bold; margin: 10px;
-        """)
-        retake_btn.clicked.connect(self.on_retake_clicked)
-        buttons_layout.addWidget(retake_btn)
-        self.retake_btn = retake_btn
-        
-        categories_btn = QPushButton("📚 Browse Categories")
-        categories_btn.setStyleSheet("""
-            background-color: #3498db; color: white; border: none;
-            border-radius: 5px; padding: 12px 24px; font-size: 14px;
-            font-weight: bold; margin: 10px;
-        """)
-        categories_btn.clicked.connect(self.back_to_categories_clicked.emit)
-        buttons_layout.addWidget(categories_btn)
-        
-        dashboard_btn = QPushButton("🏠 Dashboard")
-        dashboard_btn.setStyleSheet("""
-            background-color: #95a5a6; color: white; border: none;
-            border-radius: 5px; padding: 12px 24px; font-size: 14px;
-            margin: 10px;
-        """)
-        dashboard_btn.clicked.connect(self.back_to_dashboard_clicked.emit)
-        buttons_layout.addWidget(dashboard_btn)
-        
-        buttons_layout.addStretch()
-        main_layout.addLayout(buttons_layout)
-    
-    def display_results(self, results):
-        """Display quiz results.
-        
-        Args:
-            results (dict): Contains category_id, category_name, questions, answers
-        """
-        self.results_data = results
-        
-        # Calculate score
-        score_data = self.calculate_score(results)
-        
-        # Display score header
-        self.display_score_header(score_data, results['category_name'])
-        
-        # Display question breakdown
-        self.display_breakdown(score_data['breakdown'])
-    
-    def calculate_score(self, results):
-        """Calculate quiz score.
-        
-        Args:
-            results (dict): Quiz results data
-        
-        Returns:
-            dict: Score data with breakdown
-        """
-        questions = results['questions']
-        answers = results['answers']
-        
-        breakdown = []
+        self._last_results: Optional[Dict[str, Any]] = None
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        header = QHBoxLayout()
+
+        back_dash_btn = QPushButton("← Dashboard")
+        back_dash_btn.clicked.connect(self.back_to_dashboard_clicked.emit)
+        back_dash_btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background-color: #7f8c8d; }
+            """
+        )
+        header.addWidget(back_dash_btn)
+
+        back_cat_btn = QPushButton("← Categories")
+        back_cat_btn.clicked.connect(self.back_to_categories_clicked.emit)
+        back_cat_btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background-color: #2980b9; }
+            """
+        )
+        header.addWidget(back_cat_btn)
+
+        header.addStretch()
+        layout.addLayout(header)
+
+        self.title = QLabel("🏁 Results")
+        self.title.setAlignment(Qt.AlignCenter)
+        self.title.setStyleSheet(
+            """
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 10px;
+            """
+        )
+        layout.addWidget(self.title)
+
+        self.summary = QLabel("")
+        self.summary.setAlignment(Qt.AlignCenter)
+        self.summary.setStyleSheet(
+            """
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+            """
+        )
+        layout.addWidget(self.summary)
+
+        self.score_label = QLabel("")
+        self.score_label.setAlignment(Qt.AlignCenter)
+        self.score_label.setStyleSheet(
+            """
+            font-size: 18px;
+            font-weight: bold;
+            color: #27ae60;
+            margin-bottom: 15px;
+            """
+        )
+        layout.addWidget(self.score_label)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setStyleSheet(
+            """
+            QListWidget {
+                border: 2px solid #bdc3c7;
+                border-radius: 8px;
+                padding: 10px;
+                font-size: 14px;
+                background-color: white;
+            }
+            QListWidget::item {
+                padding: 10px;
+                border-bottom: 1px solid #ecf0f1;
+            }
+            """
+        )
+        layout.addWidget(self.list_widget)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        self.retake_btn = QPushButton("🔁 Retake Quiz")
+        self.retake_btn.setEnabled(False)
+        self.retake_btn.clicked.connect(self._on_retake_clicked)
+        self.retake_btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 14px 22px;
+                font-size: 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #229954; }
+            QPushButton:disabled { background-color: #bdc3c7; }
+            """
+        )
+        btn_row.addWidget(self.retake_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+    def load_results(self, results: Dict[str, Any]) -> None:
+        """Render results produced by QuizWidget."""
+        self._last_results = results
+        self.retake_btn.setEnabled(True)
+
+        category_name = str(results.get("category_name") or "Unknown")
+        total_questions = int(results.get("total_questions") or 0)
+
+        questions: List[Tuple[Any, ...]] = list(results.get("questions") or [])
+        answers: Dict[int, str] = dict(results.get("answers") or {})
+
+        if total_questions <= 0:
+            total_questions = len(questions)
+
         correct_count = 0
-        
+        answered_count = len(answers)
+
+        self.title.setText(f"🏁 Results — {category_name}")
+        self.summary.setText(f"Answered {answered_count} out of {total_questions} questions")
+
+        self.list_widget.clear()
+
         for q in questions:
-            q_id, q_text, correct_answer, opt_a, opt_b, opt_c, opt_d = q
-            
-            user_answer = answers.get(q_id, None)
-            is_correct = user_answer == correct_answer
-            
+            # Expected tuple:
+            # (id, question_text, correct_answer, option_a, option_b, option_c, option_d)
+            q_id = int(q[0])
+            q_text = str(q[1])
+            correct = str(q[2]).strip()
+
+            user_letter = str(answers.get(q_id) or "").strip()
+
+            is_correct = (user_letter != "" and user_letter.upper() == correct.upper())
             if is_correct:
                 correct_count += 1
-            
-            breakdown.append({
-                'question': q_text,
-                'options': {'A': opt_a, 'B': opt_b, 'C': opt_c, 'D': opt_d},
-                'user_answer': user_answer,
-                'correct_answer': correct_answer,
-                'is_correct': is_correct
-            })
-        
-        total = len(questions)
-        percentage = (correct_count / total * 100) if total > 0 else 0
-        
-        return {
-            'correct': correct_count,
-            'total': total,
-            'percentage': percentage,
-            'breakdown': breakdown
-        }
-    
-    def display_score_header(self, score_data, category_name):
-        """Display score header.
-        
-        Args:
-            score_data (dict): Calculated scores
-            category_name (str): Quiz category name
-        """
-        # Clear existing
-        if self.score_container.layout():
-            QWidget().setLayout(self.score_container.layout())
-        
-        layout = QVBoxLayout()
-        self.score_container.setLayout(layout)
-        
-        # Title
-        title = QLabel(f"📊 Results: {category_name}")
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("""
-            font-size: 24px; font-weight: bold; color: #2c3e50; margin: 20px;
-        """)
-        layout.addWidget(title)
-        
-        # Score card
-        score_frame = QFrame()
-        percentage = score_data['percentage']
-        
-        # Color based on score
-        if percentage >= 80:
-            color = "#27ae60"  # Green
-            emoji = "🎉"
-            message = "Excellent!"
-        elif percentage >= 60:
-            color = "#f39c12"  # Orange
-            emoji = "👍"
-            message = "Good job!"
+
+            status = "✅" if is_correct else "❌"
+            user_display = user_letter if user_letter else "—"
+            item_text = f"{status} {q_text}\n   Your answer: {user_display} | Correct: {correct}"
+
+            item = QListWidgetItem(item_text)
+            self.list_widget.addItem(item)
+
+        percent = int(round((correct_count / max(total_questions, 1)) * 100))
+        self.score_label.setText(f"Score: {correct_count}/{total_questions} ({percent}%)")
+
+        if percent >= 70:
+            self.score_label.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #27ae60; margin-bottom: 15px;"
+            )
+        elif percent >= 40:
+            self.score_label.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #f39c12; margin-bottom: 15px;"
+            )
         else:
-            color = "#e74c3c"  # Red
-            emoji = "📖"
-            message = "Keep practicing!"
-        
-        score_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {color};
-                border-radius: 10px;
-                padding: 30px;
-                margin: 10px 80px;
-            }}
-        """)
-        
-        score_layout = QVBoxLayout()
-        score_frame.setLayout(score_layout)
-        
-        # Emoji and message
-        emoji_label = QLabel(f"{emoji} {message}")
-        emoji_label.setAlignment(Qt.AlignCenter)
-        emoji_label.setStyleSheet("font-size: 22px; color: white; font-weight: bold;")
-        score_layout.addWidget(emoji_label)
-        
-        # Score
-        score_label = QLabel(f"{score_data['correct']} / {score_data['total']}")
-        score_label.setAlignment(Qt.AlignCenter)
-        score_label.setStyleSheet("font-size: 48px; color: white; font-weight: bold; margin: 10px;")
-        score_layout.addWidget(score_label)
-        
-        # Percentage
-        percent_label = QLabel(f"{percentage:.1f}%")
-        percent_label.setAlignment(Qt.AlignCenter)
-        percent_label.setStyleSheet("font-size: 28px; color: white;")
-        score_layout.addWidget(percent_label)
-        
-        layout.addWidget(score_frame)
-    
-    def display_breakdown(self, breakdown):
-        """Display question-by-question breakdown.
-        
-        Args:
-            breakdown (list): List of question result dicts
-        """
-        # Clear existing
-        for i in reversed(range(self.results_layout.count())): 
-            self.results_layout.itemAt(i).widget().setParent(None)
-        
-        # Title
-        title = QLabel("📝 Question Breakdown")
-        title.setStyleSheet("""
-            font-size: 20px; font-weight: bold; color: #2c3e50; 
-            margin: 20px 20px 10px 20px;
-        """)
-        self.results_layout.addWidget(title)
-        
-        # Each question
-        for i, item in enumerate(breakdown, 1):
-            q_frame = self.create_question_card(i, item)
-            self.results_layout.addWidget(q_frame)
-        
-        self.results_layout.addStretch()
-    
-    def create_question_card(self, num, item):
-        """Create a card for one question result.
-        
-        Args:
-            num (int): Question number
-            item (dict): Question result data
-        
-        Returns:
-            QFrame: Question card widget
-        """
-        frame = QFrame()
-        
-        # Color based on correctness
-        if item['is_correct']:
-            border_color = "#27ae60"
-            icon = "✅"
-        elif item['user_answer'] is None:
-            border_color = "#95a5a6"
-            icon = "⊘"
-        else:
-            border_color = "#e74c3c"
-            icon = "❌"
-        
-        frame.setStyleSheet(f"""
-            QFrame {{
-                border-left: 5px solid {border_color};
-                background-color: #ecf0f1;
-                border-radius: 5px;
-                padding: 15px;
-                margin: 5px 20px;
-            }}
-        """)
-        
-        layout = QVBoxLayout()
-        frame.setLayout(layout)
-        
-        # Question text
-        q_label = QLabel(f"{icon} <b>Question {num}:</b> {item['question']}")
-        q_label.setWordWrap(True)
-        q_label.setStyleSheet("font-size: 14px; color: #2c3e50;")
-        layout.addWidget(q_label)
-        
-        # User's answer
-        user_ans = item['user_answer']
-        if user_ans:
-            user_text = item['options'][user_ans]
-            user_label = QLabel(f"<b>Your answer:</b> {user_ans}. {user_text}")
-            user_label.setStyleSheet(f"color: {border_color}; margin-left: 20px;")
-        else:
-            user_label = QLabel("<b>Your answer:</b> (Not answered)")
-            user_label.setStyleSheet("color: #95a5a6; margin-left: 20px;")
-        layout.addWidget(user_label)
-        
-        # Correct answer (if wrong or skipped)
-        if not item['is_correct']:
-            correct_ans = item['correct_answer']
-            correct_text = item['options'][correct_ans]
-            correct_label = QLabel(f"<b>Correct answer:</b> {correct_ans}. {correct_text}")
-            correct_label.setStyleSheet("color: #27ae60; margin-left: 20px;")
-            layout.addWidget(correct_label)
-        
-        return frame
-    
-    def on_retake_clicked(self):
-        """Handle retake button click."""
-        cat_id = self.results_data['category_id']
-        cat_name = self.results_data['category_name']
-        self.retake_quiz_clicked.emit(cat_id, cat_name)
+            self.score_label.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #e74c3c; margin-bottom: 15px;"
+            )
+
+        logger.info("Results loaded: %s/%s (%s%%)", correct_count, total_questions, percent)
+
+    def _on_retake_clicked(self) -> None:
+        if not self._last_results:
+            return
+
+        category_id = int(self._last_results.get("category_id") or 0)
+        category_name = str(self._last_results.get("category_name") or "")
+
+        if category_id <= 0 or not category_name:
+            return
+
+        self.retake_quiz_clicked.emit(category_id, category_name)
