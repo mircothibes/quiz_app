@@ -149,6 +149,7 @@ class QuizApp(QMainWindow):
             try:
                 self.results_page.load_results(results)  # type: ignore[attr-defined]
                 self.stack.setCurrentWidget(self.results_page)
+                self.quiz_page.back_clicked.connect(self.show_categories)
                 return
             except Exception:
                 logger.exception("ResultsWidget.load_results failed; falling back to message box.")
