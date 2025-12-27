@@ -16,7 +16,6 @@ from ui_results import ResultsWidget
 
 logger = logging.getLogger(__name__)
 
-
 UserData = Tuple[int, str]
 
 
@@ -24,9 +23,10 @@ class QuizApp(QMainWindow):
     """Main application window.
 
     Responsibilities:
-    - Own the application navigation (QStackedWidget)
-    - Connect UI signals to navigation handlers
+    - Own application navigation (QStackedWidget)
+    - Connect UI signals to handlers
     - Keep current user state
+    - Persist quiz attempts when a quiz is submitted
     """
 
     def __init__(self) -> None:
@@ -42,9 +42,9 @@ class QuizApp(QMainWindow):
         self._wire_signals()
         self._set_initial_view()
 
-    # -------------------------
+    # ---------------------------------------------------------------------
     # Setup
-    # -------------------------
+    # ---------------------------------------------------------------------
     def _build_pages(self) -> None:
         """Create and register all pages.
 
@@ -67,7 +67,7 @@ class QuizApp(QMainWindow):
         self.stack.addWidget(self.admin_page)
 
     def _wire_signals(self) -> None:
-        """Connect UI signals to handlers."""
+        """Connect UI signals to navigation handlers."""
         # Login
         self.login_page.login_successful.connect(self.on_login_success)
 
@@ -96,11 +96,11 @@ class QuizApp(QMainWindow):
         placeholder.setStyleSheet("font-size: 24px; color: #7f8c8d;")
         return placeholder
 
-    # -------------------------
+    # ---------------------------------------------------------------------
     # Infrastructure
-    # -------------------------
+    # ---------------------------------------------------------------------
     def ensure_database_connection(self) -> bool:
-        """Ensure PostgreSQL is reachable, show a friendly error otherwise."""
+        """Ensure PostgreSQL is reachable, show a user-friendly error otherwise."""
         if db.connect():
             return True
 
@@ -112,9 +112,9 @@ class QuizApp(QMainWindow):
         )
         return False
 
-    # -------------------------
+    # ---------------------------------------------------------------------
     # Navigation / handlers
-    # -------------------------
+    # ---------------------------------------------------------------------
     def on_login_success(self, user_data: UserData) -> None:
         """Handle successful login and open the dashboard."""
         user_id, username = user_data
@@ -126,12 +126,13 @@ class QuizApp(QMainWindow):
         logger.info("User logged in: %s (id=%s)", username, user_id)
 
     def _create_or_replace_dashboard(self, username: str) -> None:
-        """Create dashboard or replace the current one (username-dependent)."""
+        """Create dashboard or replace the existing one (username-dependent)."""
         if self.dashboard_page is not None:
             self.stack.removeWidget(self.dashboard_page)
             self.dashboard_page.deleteLater()
-
-        self.dashboard_page = DashboardWidget(username)
+        
+        user_id = self.current_user[0] if self.current_user else 0 
+        self.dashboard_page = DashboardWidget(username=username, user_id=user_id)
         self.dashboard_page.browse_categories_clicked.connect(self.show_categories)
         self.dashboard_page.manage_questions_clicked.connect(self.show_admin)
         self.dashboard_page.logout_clicked.connect(self.logout)
@@ -145,6 +146,7 @@ class QuizApp(QMainWindow):
             return
 
         self.stack.setCurrentWidget(self.dashboard_page)
+        self.dashboard_page.refresh()
 
     def show_categories(self) -> None:
         """Navigate to categories page and refresh its content."""
@@ -156,14 +158,61 @@ class QuizApp(QMainWindow):
         self.stack.setCurrentWidget(self.admin_page)
 
     def on_category_selected(self, category_id: int, category_name: str) -> None:
-        """Load quiz for the chosen category and open quiz page."""
+        """Load quiz for the selected category and open quiz page."""
         logger.info("Loading quiz: %s (id=%s)", category_name, category_id)
         self.quiz_page.load_quiz(category_id, category_name)
         self.stack.setCurrentWidget(self.quiz_page)
 
     def on_quiz_completed(self, results: dict[str, Any]) -> None:
-        """Handle quiz completion and show results screen."""
-        logger.info("Quiz completed. Opening results page.")
+        """Handle quiz completion: persist attempt (if logged in) and show results."""
+        logger.info("Quiz completed. Persisting attempt (if possible) and opening results page.")
+
+        user_id = self.current_user[0] if self.current_user else None
+        category_id = int(results.get("category_id") or 0)
+
+        questions = list(results.get("questions", []))
+        answers: dict[int, str] = dict(results.get("answers", {}))
+
+        total_questions = len(questions)
+        answered_count = len(answers)
+
+        correct_count = 0
+        per_question: list[tuple[int, Optional[str], str, bool]] = []
+
+        for q in questions:
+            q_id = int(q[0])
+            correct_letter = str(q[2]).strip().upper()
+
+            selected = answers.get(q_id)
+            selected_letter = str(selected).strip().upper() if selected else None
+
+            is_correct = selected_letter is not None and selected_letter == correct_letter
+            if is_correct:
+                correct_count += 1
+
+            per_question.append((q_id, selected_letter, correct_letter, is_correct))
+
+        # Persist attempt if user is logged in and the quiz has valid data
+        if user_id is not None and category_id > 0 and total_questions > 0:
+            attempt_id = db.create_quiz_attempt(
+                user_id=user_id,
+                category_id=category_id,
+                total_questions=total_questions,
+                correct_count=correct_count,
+                answered_count=answered_count,
+            )
+
+            if attempt_id is not None:
+                for q_id, selected_letter, correct_letter, is_correct in per_question:
+                    db.add_attempt_answer(
+                        attempt_id=attempt_id,
+                        question_id=q_id,
+                        selected_letter=selected_letter,
+                        correct_letter=correct_letter,
+                        is_correct=is_correct,
+                    )
+
+        # Show results page
         self.results_page.load_results(results)
         self.stack.setCurrentWidget(self.results_page)
 
