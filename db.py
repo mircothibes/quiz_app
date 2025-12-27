@@ -15,19 +15,19 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """PostgreSQL access layer for the Quiz App.
 
-    This class owns a single connection and provides helper methods for:
-    - Connecting/disconnecting
-    - Running SELECT queries (fetch_one/fetch_all)
-    - Running write queries with commit/rollback (execute)
-    - Domain queries used by the UI (auth, categories, questions, attempts)
+    This class owns a single database connection and provides:
+    - Connection management (connect/disconnect/is_connected)
+    - Query helpers (fetch_one/fetch_all/execute) with safe error handling
+    - Domain-level methods used by the UI (auth, categories, questions)
+    - Quiz history persistence and queries (attempts, stats)
     """
 
     def __init__(self) -> None:
         self._conn: Optional[PgConnection] = None
 
-    # -------------------------
+    # ---------------------------------------------------------------------
     # Connection management
-    # -------------------------
+    # ---------------------------------------------------------------------
     def connect(self) -> bool:
         """Open a connection to PostgreSQL.
 
@@ -57,7 +57,7 @@ class DatabaseManager:
             return False
 
     def disconnect(self) -> None:
-        """Close the connection safely."""
+        """Close the connection safely (if open)."""
         if self._conn is None:
             return
 
@@ -77,9 +77,9 @@ class DatabaseManager:
         if not self.is_connected():
             raise RuntimeError("No database connection. Call db.connect() first.")
 
-    # -------------------------
+    # ---------------------------------------------------------------------
     # Generic query helpers
-    # -------------------------
+    # ---------------------------------------------------------------------
     def fetch_one(self, query: str, params: Optional[Sequence[Any]] = None) -> Optional[tuple[Any, ...]]:
         """Run a SELECT query and return a single row (or None)."""
         self._ensure_connection()
@@ -133,9 +133,9 @@ class DatabaseManager:
         row = self.fetch_one("SELECT version();")
         return str(row[0]) if row else None
 
-    # -------------------------
+    # ---------------------------------------------------------------------
     # Domain methods used by the app
-    # -------------------------
+    # ---------------------------------------------------------------------
     def authenticate_user(self, username: str, password: str) -> Optional[tuple[int, str]]:
         """Authenticate a user.
 
@@ -172,7 +172,7 @@ class DatabaseManager:
         return [(int(r[0]), str(r[1]), str(r[2] or "")) for r in rows]
 
     def get_questions_by_category(self, category_id: int) -> list[tuple[Any, ...]]:
-        """Return questions for the given category."""
+        """Return all questions for the given category."""
         return self.fetch_all(
             """
             SELECT id, question_text, correct_answer,
@@ -184,9 +184,9 @@ class DatabaseManager:
             (category_id,),
         )
 
-    # -------------------------
+    # ---------------------------------------------------------------------
     # Quiz history (attempts)
-    # -------------------------
+    # ---------------------------------------------------------------------
     def create_quiz_attempt(
         self,
         user_id: int,
@@ -195,7 +195,11 @@ class DatabaseManager:
         correct_count: int,
         answered_count: int,
     ) -> Optional[int]:
-        """Create a quiz attempt and return its id (or None on failure)."""
+        """Create a quiz attempt and return its id.
+
+        Returns:
+            attempt_id (int) on success, None on failure.
+        """
         self._ensure_connection()
         assert self._conn is not None
 
@@ -210,6 +214,7 @@ class DatabaseManager:
                     (user_id, category_id, total_questions, correct_count, answered_count),
                 )
                 row = cur.fetchone()
+
             self._conn.commit()
 
             if not row:
@@ -232,7 +237,11 @@ class DatabaseManager:
         correct_letter: str,
         is_correct: bool,
     ) -> bool:
-        """Persist a single answer row for an attempt."""
+        """Persist a single answer row for an attempt.
+
+        Returns:
+            True if the insert succeeded, False otherwise.
+        """
         return self.execute(
             """
             INSERT INTO quiz_attempt_answers (attempt_id, question_id, selected_letter, correct_letter, is_correct)
@@ -240,6 +249,66 @@ class DatabaseManager:
             """,
             (attempt_id, question_id, selected_letter, correct_letter, is_correct),
         )
+
+    def get_recent_attempts(self, user_id: int, limit: int = 5) -> list[tuple[str, str, int, int]]:
+        """Return recent attempts for a user.
+
+        Returns:
+            A list of tuples:
+            (created_at_str, category_name, correct_count, total_questions)
+        """
+        rows = self.fetch_all(
+            """
+            SELECT
+                to_char(a.created_at, 'YYYY-MM-DD HH24:MI') AS created_at,
+                c.name AS category_name,
+                a.correct_count,
+                a.total_questions
+            FROM quiz_attempts a
+            JOIN categories c ON c.id = a.category_id
+            WHERE a.user_id = %s
+            ORDER BY a.created_at DESC
+            LIMIT %s
+            """,
+            (user_id, limit),
+        )
+        return [(str(r[0]), str(r[1]), int(r[2]), int(r[3])) for r in rows]
+
+    def get_attempt_stats(self, user_id: int) -> tuple[int, int, int]:
+        """Return attempt stats for a user.
+
+        Returns:
+            (total_attempts, best_percent, last_percent)
+        """
+        total_row = self.fetch_one(
+            "SELECT COUNT(*) FROM quiz_attempts WHERE user_id = %s",
+            (user_id,),
+        )
+        total_attempts = int(total_row[0]) if total_row else 0
+
+        best_row = self.fetch_one(
+            """
+            SELECT MAX(ROUND((correct_count::float / NULLIF(total_questions, 0)) * 100))
+            FROM quiz_attempts
+            WHERE user_id = %s
+            """,
+            (user_id,),
+        )
+        best_percent = int(best_row[0]) if best_row and best_row[0] is not None else 0
+
+        last_row = self.fetch_one(
+            """
+            SELECT ROUND((correct_count::float / NULLIF(total_questions, 0)) * 100)
+            FROM quiz_attempts
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        last_percent = int(last_row[0]) if last_row and last_row[0] is not None else 0
+
+        return total_attempts, best_percent, last_percent
 
 
 db = DatabaseManager()
