@@ -8,8 +8,11 @@ from PyQt5.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -22,13 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 class DashboardWidget(QWidget):
-    """Main dashboard with navigation buttons and user quiz stats.
+    """Dashboard screen with navigation and user quiz statistics.
 
-    Features:
-    - Welcome header
-    - Navigation actions (categories, admin, logout)
-    - User stats (total attempts, best score, last score)
-    - Recent attempts table
+    Layout goals:
+    - Center content on large screens (avoid "too wide" UI).
+    - Keep a scroll fallback for small screens.
+    - Make the stats cards responsive: 1/2/3 columns depending on window width.
     """
 
     browse_categories_clicked = pyqtSignal()
@@ -40,93 +42,111 @@ class DashboardWidget(QWidget):
         self.username = username
         self.user_id = user_id
 
+        # Stats UI references
         self._stats_total_label: Optional[QLabel] = None
         self._stats_best_label: Optional[QLabel] = None
         self._stats_last_label: Optional[QLabel] = None
+
         self._attempts_table: Optional[QTableWidget] = None
         self._attempts_info_label: Optional[QLabel] = None
 
-        self.init_ui()
+        # Responsive stats cards
+        self._stats_cards: list[QFrame] = []
+        self._stats_grid: Optional[QGridLayout] = None
+        self._stats_columns: int = 3  # current applied columns
+
+        self._build_ui()
         self.refresh()
 
     # ---------------------------------------------------------------------
     # UI setup
     # ---------------------------------------------------------------------
-    def init_ui(self) -> None:
-        """Initialize the dashboard interface."""
-        main_layout = QVBoxLayout()
-        self.setLayout(main_layout)
+    def _build_ui(self) -> None:
+        """Build the dashboard UI with a centered, scrollable layout."""
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
 
-        main_layout.addWidget(self._create_header())
-        main_layout.addWidget(self._create_navigation())
-        main_layout.addWidget(self._create_stats_section())
-        main_layout.addWidget(self._create_recent_attempts_section())
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
 
-        main_layout.addStretch()
+        # Wrapper centers the content
+        wrapper = QWidget()
+        wrapper_layout = QHBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+
+        wrapper_layout.addStretch(1)
+
+        content = QWidget()
+        content.setMaximumWidth(1100)  # key: prevents "too wide" on large screens
+        content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setSpacing(18)
+        content_layout.setAlignment(Qt.AlignTop)
+
+        content_layout.addWidget(self._create_header())
+        content_layout.addWidget(self._create_navigation())
+        content_layout.addWidget(self._create_stats_section())
+        content_layout.addWidget(self._create_recent_attempts_section())
+        content_layout.addStretch(1)
+
+        wrapper_layout.addWidget(content, 0)
+        wrapper_layout.addStretch(1)
+
+        scroll.setWidget(wrapper)
+        root_layout.addWidget(scroll)
+
+        # Apply initial responsive layout
+        self._update_responsive_layout()
 
     def _create_header(self) -> QFrame:
-        """Create header with welcome message."""
-        header_frame = QFrame()
-        header_frame.setStyleSheet(
+        """Create the top header with welcome message."""
+        header = QFrame()
+        header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        header.setMinimumHeight(150)
+
+        header.setStyleSheet(
             """
             QFrame {
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:0,
                     stop:0 #3498db, stop:1 #2980b9
                 );
-                border-radius: 10px;
-                padding: 20px;
-                margin: 20px;
+                border-radius: 12px;
             }
             """
         )
 
-        layout = QVBoxLayout()
-        header_frame.setLayout(layout)
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(6)
 
-        welcome_label = QLabel(f"👋 Welcome back, {self.username}!")
-        welcome_label.setAlignment(Qt.AlignCenter)
-        welcome_label.setStyleSheet(
-            """
-            font-size: 28px;
-            font-weight: bold;
-            color: white;
-            """
-        )
-        layout.addWidget(welcome_label)
+        welcome = QLabel(f"👋 Welcome back, {self.username}!")
+        welcome.setAlignment(Qt.AlignCenter)
+        welcome.setWordWrap(True)
+        welcome.setStyleSheet("font-size: 28px; font-weight: bold; color: white;")
+        layout.addWidget(welcome)
 
         subtitle = QLabel("What would you like to do today?")
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet(
-            """
-            font-size: 14px;
-            color: #ecf0f1;
-            margin-top: 5px;
-            """
-        )
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("font-size: 14px; color: #ecf0f1;")
         layout.addWidget(subtitle)
 
-        return header_frame
+        return header
 
     def _create_navigation(self) -> QWidget:
-        """Create navigation button grid."""
-        nav_widget = QWidget()
-        layout = QVBoxLayout()
-        nav_widget.setLayout(layout)
+        """Create the navigation section (categories/admin/logout)."""
+        container = QWidget()
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(10)
 
         title = QLabel("📍 Navigation")
-        title.setStyleSheet(
-            """
-            font-size: 20px;
-            font-weight: bold;
-            color: #2c3e50;
-            margin: 20px 20px 10px 20px;
-            """
-        )
-        layout.addWidget(title)
-
-        button_layout = QVBoxLayout()
-        button_layout.setSpacing(15)
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50;")
+        outer.addWidget(title)
 
         browse_btn = self._create_nav_button(
             "📚 Browse Quiz Categories",
@@ -134,7 +154,7 @@ class DashboardWidget(QWidget):
             "#27ae60",
         )
         browse_btn.clicked.connect(self.browse_categories_clicked.emit)
-        button_layout.addWidget(browse_btn)
+        outer.addWidget(browse_btn)
 
         manage_btn = self._create_nav_button(
             "➕ Manage Questions",
@@ -142,7 +162,7 @@ class DashboardWidget(QWidget):
             "#f39c12",
         )
         manage_btn.clicked.connect(self.manage_questions_clicked.emit)
-        button_layout.addWidget(manage_btn)
+        outer.addWidget(manage_btn)
 
         logout_btn = self._create_nav_button(
             "🚪 Logout",
@@ -150,77 +170,64 @@ class DashboardWidget(QWidget):
             "#e74c3c",
         )
         logout_btn.clicked.connect(self.logout_clicked.emit)
-        button_layout.addWidget(logout_btn)
+        outer.addWidget(logout_btn)
 
-        button_container = QWidget()
-        button_container.setLayout(button_layout)
-        button_container.setStyleSheet("margin: 0px 40px;")
-        layout.addWidget(button_container)
-
-        return nav_widget
+        return container
 
     def _create_stats_section(self) -> QWidget:
-        """Create the stats section (total attempts, best score, last score)."""
+        """Create the stats cards section (responsive columns)."""
         container = QWidget()
-        outer = QVBoxLayout()
-        container.setLayout(outer)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(10)
 
         title = QLabel("📊 Your Stats")
-        title.setStyleSheet(
-            """
-            font-size: 20px;
-            font-weight: bold;
-            color: #2c3e50;
-            margin: 20px 20px 10px 20px;
-            """
-        )
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50;")
         outer.addWidget(title)
 
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(15)
-        grid.setVerticalSpacing(15)
+        grid_host = QWidget()
+        grid = QGridLayout(grid_host)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(14)
+        self._stats_grid = grid
 
         card_total, self._stats_total_label = self._create_stat_card("Total Attempts", "0")
         card_best, self._stats_best_label = self._create_stat_card("Best Score", "0%")
         card_last, self._stats_last_label = self._create_stat_card("Last Score", "0%")
 
-        grid.addWidget(card_total, 0, 0)
-        grid.addWidget(card_best, 0, 1)
-        grid.addWidget(card_last, 0, 2)
+        self._stats_cards = [card_total, card_best, card_last]
+        outer.addWidget(grid_host)
 
-        wrapper = QWidget()
-        wrapper.setLayout(grid)
-        wrapper.setStyleSheet("margin: 0px 40px;")
-        outer.addWidget(wrapper)
+        # initial flow
+        self._reflow_stats_cards(columns=3)
 
         return container
 
     def _create_recent_attempts_section(self) -> QWidget:
-        """Create a table for recent attempts."""
+        """Create a recent attempts table section."""
         container = QWidget()
-        outer = QVBoxLayout()
-        container.setLayout(outer)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(10)
 
         title = QLabel("🕒 Recent Attempts")
-        title.setStyleSheet(
-            """
-            font-size: 20px;
-            font-weight: bold;
-            color: #2c3e50;
-            margin: 20px 20px 10px 20px;
-            """
-        )
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50;")
         outer.addWidget(title)
 
         table = QTableWidget(0, 3)
         table.setHorizontalHeaderLabels(["Date", "Category", "Score"])
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSelectionMode(QTableWidget.SingleSelection)
+        table.verticalHeader().setVisible(False)
+
         table.setStyleSheet(
             """
             QTableWidget {
                 border: 2px solid #bdc3c7;
-                border-radius: 8px;
+                border-radius: 10px;
                 background-color: white;
-                margin: 0px 40px;
             }
             QHeaderView::section {
                 background-color: #ecf0f1;
@@ -230,22 +237,65 @@ class DashboardWidget(QWidget):
             }
             """
         )
-        table.setEditTriggers(QTableWidget.NoEditTriggers)
-        table.setSelectionBehavior(QTableWidget.SelectRows)
-        table.setSelectionMode(QTableWidget.SingleSelection)
-        table.verticalHeader().setVisible(False)
-        table.horizontalHeader().setStretchLastSection(True)
-        table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft)
+
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setDefaultAlignment(Qt.AlignLeft)
 
         self._attempts_table = table
         outer.addWidget(table)
 
         info = QLabel("")
-        info.setStyleSheet("color: #7f8c8d; font-size: 12px; margin: 8px 40px;")
+        info.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         self._attempts_info_label = info
         outer.addWidget(info)
 
         return container
+
+    # ---------------------------------------------------------------------
+    # Responsive behavior
+    # ---------------------------------------------------------------------
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        """Update responsive sections when the window size changes."""
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self) -> None:
+        """Adjust layouts based on available width."""
+        width = self.width()
+
+        if width < 720:
+            cols = 1
+        elif width < 980:
+            cols = 2
+        else:
+            cols = 3
+
+        if cols != self._stats_columns:
+            self._reflow_stats_cards(columns=cols)
+            self._stats_columns = cols
+
+    def _reflow_stats_cards(self, columns: int) -> None:
+        """Reposition stat cards in the grid using the given column count."""
+        if self._stats_grid is None:
+            return
+
+        # Clear existing items
+        while self._stats_grid.count():
+            item = self._stats_grid.takeAt(0)
+            if item and item.widget():
+                item.widget().setParent(None)
+
+        for idx, card in enumerate(self._stats_cards):
+            row = idx // columns
+            col = idx % columns
+            self._stats_grid.addWidget(card, row, col)
+
+        # Improve stretching behavior
+        for c in range(columns):
+            self._stats_grid.setColumnStretch(c, 1)
 
     # ---------------------------------------------------------------------
     # Data refresh
@@ -256,29 +306,23 @@ class DashboardWidget(QWidget):
             logger.warning("Dashboard refresh skipped: invalid user_id=%s", self.user_id)
             return
 
-        try:
-            total_attempts, best_percent, last_percent = db.get_attempt_stats(self.user_id)
-            recent = db.get_recent_attempts(self.user_id, limit=5)
+        total_attempts, best_percent, last_percent = db.get_attempt_stats(self.user_id)
+        recent = db.get_recent_attempts(self.user_id, limit=5)
 
-            if self._stats_total_label is not None:
-                self._stats_total_label.setText(str(total_attempts))
-            if self._stats_best_label is not None:
-                self._stats_best_label.setText(f"{best_percent}%")
-            if self._stats_last_label is not None:
-                self._stats_last_label.setText(f"{last_percent}%")
+        if self._stats_total_label is not None:
+            self._stats_total_label.setText(str(total_attempts))
+        if self._stats_best_label is not None:
+            self._stats_best_label.setText(f"{best_percent}%")
+        if self._stats_last_label is not None:
+            self._stats_last_label.setText(f"{last_percent}%")
 
-            self._populate_recent_attempts(recent)
-
-        except Exception as exc:
-            logger.exception("Dashboard refresh failed: %s", exc)
-            if self._attempts_info_label is not None:
-                self._attempts_info_label.setText("⚠️ Could not load stats from database.")
+        self._populate_recent_attempts(recent)
 
     def _populate_recent_attempts(self, rows: list[tuple[str, str, int, int]]) -> None:
         """Fill recent attempts table.
 
         Args:
-            rows: list of (created_at_str, category_name, correct_count, total_questions)
+            rows: (created_at_str, category_name, correct_count, total_questions)
         """
         if self._attempts_table is None:
             return
@@ -303,31 +347,31 @@ class DashboardWidget(QWidget):
         if self._attempts_info_label is not None:
             self._attempts_info_label.setText(f"Showing last {len(rows)} attempt(s).")
 
-        self._attempts_table.resizeColumnsToContents()
+        self._attempts_table.resizeRowsToContents()
 
     # ---------------------------------------------------------------------
     # Components
     # ---------------------------------------------------------------------
     def _create_stat_card(self, title: str, value: str) -> tuple[QFrame, QLabel]:
-        """Create a small stat card component.
-
-        Returns:
-            (frame, value_label)
-        """
+        """Create a stat card widget."""
         frame = QFrame()
+        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        frame.setMinimumHeight(110)
+
         frame.setStyleSheet(
             """
             QFrame {
                 background-color: white;
                 border: 2px solid #ecf0f1;
-                border-radius: 10px;
+                border-radius: 12px;
                 padding: 12px;
             }
             """
         )
 
-        layout = QVBoxLayout()
-        frame.setLayout(layout)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(6)
 
         title_label = QLabel(title)
         title_label.setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: bold;")
@@ -337,21 +381,24 @@ class DashboardWidget(QWidget):
         value_label.setStyleSheet("color: #2c3e50; font-size: 24px; font-weight: bold;")
         layout.addWidget(value_label)
 
-        layout.setAlignment(Qt.AlignTop)
         return frame, value_label
 
     def _create_nav_button(self, title: str, description: str, color: str) -> QPushButton:
-        """Create a styled navigation button."""
+        """Create a styled navigation button with safe sizing."""
         btn = QPushButton(f"{title}\n{description}")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        btn.setMinimumHeight(76)
+
         btn.setStyleSheet(
             f"""
             QPushButton {{
                 text-align: left;
-                padding: 20px;
+                padding: 18px;
                 background-color: {color};
                 color: white;
                 border: none;
-                border-radius: 8px;
+                border-radius: 12px;
                 font-size: 14px;
             }}
             QPushButton:hover {{
@@ -362,16 +409,15 @@ class DashboardWidget(QWidget):
             }}
             """
         )
-        btn.setCursor(Qt.PointingHandCursor)
         return btn
 
     @staticmethod
     def _darken_color(hex_color: str, factor: float = 0.9) -> str:
-        """Darken a hex color by a factor."""
-        hex_color = hex_color.lstrip("#")
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
+        """Return a darker version of a hex color."""
+        color = hex_color.lstrip("#")
+        r = int(color[0:2], 16)
+        g = int(color[2:4], 16)
+        b = int(color[4:6], 16)
 
         r, g, b = int(r * factor), int(g * factor), int(b * factor)
         return f"#{r:02x}{g:02x}{b:02x}"
