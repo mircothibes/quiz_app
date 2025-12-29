@@ -8,12 +8,12 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QMessageBox, QStackedWidget
 
 from db import db
-from ui_categories import CategoryWidget
-from ui_dashboard import DashboardWidget
-from ui_login import LoginWidget
-from ui_quiz import QuizWidget
-from ui_results import ResultsWidget
-from ui_admin import AdminWidget
+from ui.categories import CategoryWidget
+from ui.dashboard import DashboardWidget
+from ui.login import LoginWidget
+from ui.quiz import QuizWidget
+from ui.results import ResultsWidget
+from ui.admin import AdminWidget
 
 logger = logging.getLogger(__name__)
 
