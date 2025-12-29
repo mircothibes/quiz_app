@@ -13,6 +13,7 @@ from ui_dashboard import DashboardWidget
 from ui_login import LoginWidget
 from ui_quiz import QuizWidget
 from ui_results import ResultsWidget
+from ui_admin import AdminWidget
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,7 @@ class QuizApp(QMainWindow):
         self.categories_page = CategoryWidget()
         self.quiz_page = QuizWidget()
         self.results_page = ResultsWidget()
-        self.admin_page = self._create_placeholder("➕ Admin", "Coming soon...")
-
+        self.admin_page = AdminWidget()
         self.stack.addWidget(self.login_page)
         self.stack.addWidget(self.categories_page)
         self.stack.addWidget(self.quiz_page)
@@ -67,7 +67,7 @@ class QuizApp(QMainWindow):
         self.stack.addWidget(self.admin_page)
 
     def _wire_signals(self) -> None:
-        """Connect UI signals to navigation handlers."""
+        """Connect UI signals to navigation handlAdminWidget()ers."""
         # Login
         self.login_page.login_successful.connect(self.on_login_success)
 
@@ -83,6 +83,9 @@ class QuizApp(QMainWindow):
         self.results_page.retake_quiz_clicked.connect(self.on_retake_quiz)
         self.results_page.back_to_dashboard_clicked.connect(self.show_dashboard)
         self.results_page.back_to_categories_clicked.connect(self.show_categories)
+
+        # Connect
+        self.admin_page.back_clicked.connect(self.show_dashboard)
 
     def _set_initial_view(self) -> None:
         """Start on login page."""
@@ -155,6 +158,7 @@ class QuizApp(QMainWindow):
 
     def show_admin(self) -> None:
         """Navigate to admin page (placeholder)."""
+        self.admin_page.refresh()
         self.stack.setCurrentWidget(self.admin_page)
 
     def on_category_selected(self, category_id: int, category_name: str) -> None:
