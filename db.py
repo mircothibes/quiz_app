@@ -184,6 +184,121 @@ class DatabaseManager:
             (category_id,),
         )
 
+    def list_questions(self, limit: int = 200) -> list[tuple[int, str, str, str]]:
+        """Return a list of questions (lightweight) for the admin table.
+
+        Returns:
+            List of (question_id, category_name, question_text, correct_answer)
+        """
+        rows = self.fetch_all(
+            """
+            SELECT q.id, c.name, q.question_text, q.correct_answer
+            FROM questions q
+            JOIN categories c ON c.id = q.category_id
+            ORDER BY q.id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return [(int(r[0]), str(r[1]), str(r[2]), str(r[3])) for r in rows]
+
+    def get_question_by_id(self, question_id: int) -> Optional[tuple[int, int, str, str, str, str, str, str]]:
+        """Return full question data by id.
+
+        Returns:
+            (id, category_id, question_text, correct_answer, option_a, option_b, option_c, option_d)
+        """
+        row = self.fetch_one(
+            """
+            SELECT id, category_id, question_text, correct_answer,
+                   option_a, option_b, option_c, option_d
+            FROM questions
+            WHERE id = %s
+            """,
+            (question_id,),
+        )
+        if not row:
+            return None
+
+        return (
+            int(row[0]),
+            int(row[1]),
+            str(row[2]),
+            str(row[3]),
+            str(row[4]),
+            str(row[5]),
+            str(row[6]),
+            str(row[7]),
+        )
+
+    def create_question(
+        self,
+        category_id: int,
+        question_text: str,
+        correct_answer: str,
+        option_a: str,
+        option_b: str,
+        option_c: str,
+        option_d: str,
+    ) -> Optional[int]:
+        """Create a question and return its id."""
+        self._ensure_connection()
+        assert self._conn is not None
+
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO questions (category_id, question_text, correct_answer, option_a, option_b, option_c, option_d)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (category_id, question_text, correct_answer, option_a, option_b, option_c, option_d),
+                )
+                row = cur.fetchone()
+            self._conn.commit()
+
+            return int(row[0]) if row else None
+        except Exception as exc:
+            logger.exception("create_question failed: %s", exc)
+            try:
+                self._conn.rollback()
+            except Exception:
+                logger.exception("rollback failed")
+            return None
+
+    def update_question(
+        self,
+        question_id: int,
+        category_id: int,
+        question_text: str,
+        correct_answer: str,
+        option_a: str,
+        option_b: str,
+        option_c: str,
+        option_d: str,
+    ) -> bool:
+        """Update an existing question."""
+        return self.execute(
+            """
+            UPDATE questions
+            SET category_id = %s,
+                question_text = %s,
+                correct_answer = %s,
+                option_a = %s,
+                option_b = %s,
+                option_c = %s,
+                option_d = %s
+            WHERE id = %s
+            """,
+            (category_id, question_text, correct_answer, option_a, option_b, option_c, option_d, question_id),
+        )
+
+    def delete_question(self, question_id: int) -> bool:
+        """Delete a question by id."""
+        return self.execute("DELETE FROM questions WHERE id = %s", (question_id,))
+       
+
     # ---------------------------------------------------------------------
     # Quiz history (attempts)
     # ---------------------------------------------------------------------
