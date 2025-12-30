@@ -161,10 +161,10 @@ class QuizApp(QMainWindow):
         self.admin_page.refresh()
         self.stack.setCurrentWidget(self.admin_page)
 
-    def on_category_selected(self, category_id: int, category_name: str) -> None:
+    def on_category_selected(self, category_id: int, category_name: str, limit: int = 10) -> None:
         """Load quiz for the selected category and open quiz page."""
-        logger.info("Loading quiz: %s (id=%s)", category_name, category_id)
-        self.quiz_page.load_quiz(category_id, category_name)
+        logger.info("Loading quiz: %s (id=%s)", category_name, category_id, limit)
+        self.quiz_page.load_quiz(category_id, category_name, limit)
         self.stack.setCurrentWidget(self.quiz_page)
 
     def on_quiz_completed(self, results: dict[str, Any]) -> None:
