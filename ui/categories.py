@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import logging
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -9,6 +11,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -19,9 +22,15 @@ logger = logging.getLogger(__name__)
 
 
 class CategoryWidget(QWidget):
-    """Widget to display and select quiz categories."""
+    """Category selection screen.
 
-    category_selected = pyqtSignal(int, str)  # (category_id, category_name)
+    Responsibilities:
+    - Load categories from the database
+    - Allow the user to select a category
+    - Emit selection including a question limit (category_id, category_name, limit)
+    """
+
+    category_selected = pyqtSignal(int, str, int)  # (category_id, category_name, limit)
     back_clicked = pyqtSignal()
 
     def __init__(self) -> None:
@@ -32,9 +41,14 @@ class CategoryWidget(QWidget):
         # The main window should call load_categories() when navigating to this page.
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+        """Build the categories UI."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
+        # ------------------------------------------------------------------
+        # Header row: Back + Refresh
+        # ------------------------------------------------------------------
         header_layout = QHBoxLayout()
 
         self.back_btn = QPushButton("← Back to Dashboard")
@@ -79,6 +93,9 @@ class CategoryWidget(QWidget):
 
         layout.addLayout(header_layout)
 
+        # ------------------------------------------------------------------
+        # Titles
+        # ------------------------------------------------------------------
         title = QLabel("📚 Select a Quiz Category")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(
@@ -86,7 +103,7 @@ class CategoryWidget(QWidget):
             font-size: 26px;
             font-weight: bold;
             color: #2c3e50;
-            margin: 20px;
+            margin: 10px 0px;
             """
         )
         layout.addWidget(title)
@@ -97,11 +114,14 @@ class CategoryWidget(QWidget):
             """
             font-size: 14px;
             color: #7f8c8d;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             """
         )
         layout.addWidget(subtitle)
 
+        # ------------------------------------------------------------------
+        # Category list
+        # ------------------------------------------------------------------
         self.category_list = QListWidget()
         self.category_list.setStyleSheet(
             """
@@ -129,17 +149,35 @@ class CategoryWidget(QWidget):
         self.category_list.itemSelectionChanged.connect(self.on_selection_changed)
         layout.addWidget(self.category_list)
 
+        # Info label
         self.info_label = QLabel("")
         self.info_label.setAlignment(Qt.AlignCenter)
         self.info_label.setStyleSheet(
             """
             font-size: 12px;
             color: #7f8c8d;
-            margin: 10px;
+            margin: 10px 0px;
             """
         )
         layout.addWidget(self.info_label)
 
+        # ------------------------------------------------------------------
+        # Limit row (number of questions)
+        # ------------------------------------------------------------------
+        self.limit_spin = QSpinBox()
+        self.limit_spin.setRange(5, 50)
+        self.limit_spin.setValue(10)
+        self.limit_spin.setSuffix(" questions")
+
+        limit_row = QHBoxLayout()
+        limit_row.addWidget(QLabel("Number of questions:"))
+        limit_row.addWidget(self.limit_spin)
+        limit_row.addStretch(1)
+        layout.addLayout(limit_row)
+
+        # ------------------------------------------------------------------
+        # Start button
+        # ------------------------------------------------------------------
         self.select_btn = QPushButton("Start Quiz with Selected Category")
         self.select_btn.setStyleSheet(
             """
@@ -151,7 +189,7 @@ class CategoryWidget(QWidget):
                 padding: 15px;
                 font-size: 16px;
                 font-weight: bold;
-                margin: 10px 40px;
+                margin-top: 10px;
             }
             QPushButton:hover {
                 background-color: #229954;
@@ -166,17 +204,20 @@ class CategoryWidget(QWidget):
         layout.addWidget(self.select_btn)
 
     def _set_loading(self, is_loading: bool) -> None:
+        """Enable/disable controls while loading data."""
         self.refresh_btn.setDisabled(is_loading)
         self.back_btn.setDisabled(is_loading)
-        self.select_btn.setDisabled(is_loading or len(self.category_list.selectedItems()) == 0)
         self.category_list.setDisabled(is_loading)
+
+        has_selection = len(self.category_list.selectedItems()) > 0
+        self.select_btn.setDisabled(is_loading or not has_selection)
 
         if is_loading:
             self.info_label.setText("Loading categories...")
             self.info_label.setStyleSheet("color: #7f8c8d; font-size: 12px;")
 
     def load_categories(self) -> None:
-        """Load categories from database and populate list."""
+        """Load categories from database and populate the list widget."""
         self._set_loading(True)
         self.category_list.clear()
         self.categories = []
@@ -219,10 +260,11 @@ class CategoryWidget(QWidget):
             self._set_loading(False)
 
     def on_selection_changed(self) -> None:
-        selected_items = self.category_list.selectedItems()
-        self.select_btn.setEnabled(len(selected_items) > 0)
+        """Enable Start button only when a category is selected."""
+        self.select_btn.setEnabled(len(self.category_list.selectedItems()) > 0)
 
     def on_select_category(self) -> None:
+        """Handle Start button: emit the selected category + question limit."""
         selected_items = self.category_list.selectedItems()
         if not selected_items:
             QMessageBox.warning(self, "No Selection", "Please select a category first.")
@@ -231,13 +273,16 @@ class CategoryWidget(QWidget):
         item = selected_items[0]
         category_id = int(item.data(Qt.UserRole))
         category_name = item.text().split("\n")[0].strip()
+        limit = int(self.limit_spin.value())
 
-        logger.info("Selected category: %s (id=%s)", category_name, category_id)
-        self.category_selected.emit(category_id, category_name)
+        logger.info("Selected category: %s (id=%s, limit=%s)", category_name, category_id, limit)
+        self.category_selected.emit(category_id, category_name, limit)
 
     def on_category_double_clicked(self, item: QListWidgetItem) -> None:
+        """Double-click shortcut: emit selection + question limit."""
         category_id = int(item.data(Qt.UserRole))
         category_name = item.text().split("\n")[0].strip()
+        limit = int(self.limit_spin.value())
 
-        logger.info("Double-clicked category: %s (id=%s)", category_name, category_id)
-        self.category_selected.emit(category_id, category_name)
+        logger.info("Double-clicked category: %s (id=%s, limit=%s)", category_name, category_id, limit)
+        self.category_selected.emit(category_id, category_name, limit)
