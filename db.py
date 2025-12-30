@@ -171,17 +171,54 @@ class DatabaseManager:
         )
         return [(int(r[0]), str(r[1]), str(r[2] or "")) for r in rows]
 
-    def get_questions_by_category(self, category_id: int) -> list[tuple[Any, ...]]:
-        """Return all questions for the given category."""
+    def get_quiz_questions(self, category_id: int, limit: int) -> list[tuple[Any, ...]]:
+        """Return a randomized subset of questions for a quiz run."""
+        safe_limit = max(1, int(limit))
+
         return self.fetch_all(
             """
             SELECT id, question_text, correct_answer,
                    option_a, option_b, option_c, option_d
             FROM questions
             WHERE category_id = %s
-            ORDER BY id
+            ORDER BY RANDOM()
+            LIMIT %s
             """,
-            (category_id,),
+            (category_id, safe_limit),
+        )
+
+    def get_questions_by_category(self, category_id: int, limit: Optional[int] = None) -> list[tuple[Any, ...]]:
+        """Return questions for the given category.
+
+    Args:
+        category_id: Category identifier.
+        limit: If provided, return at most this many questions.
+
+    Returns:
+        A list of rows: (id, question_text, correct_answer, option_a, option_b, option_c, option_d)
+    """
+        if limit is None:
+            return self.fetch_all(
+                """
+                SELECT id, question_text, correct_answer,
+                       option_a, option_b, option_c, option_d
+                FROM questions
+                WHERE category_id = %s
+                ORDER BY id
+                """,
+                (category_id,),
+            )
+
+        return self.fetch_all(
+            """
+            SELECT id, question_text, correct_answer,
+                   option_a, option_b, option_c, option_d
+            FROM questions
+            WHERE category_id = %s
+            ORDER BY RANDOM()
+            LIMIT %s
+            """,
+            (category_id, limit),
         )
 
     def list_questions(self, limit: int = 200) -> list[tuple[int, str, str, str]]:
