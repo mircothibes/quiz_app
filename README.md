@@ -56,3 +56,25 @@ quiz_app/
 
 ---
 
+## 🚀 Getting Started
+
+1) Start PostgreSQL (Docker)
+```bash
+docker compose up -db
+```
+
+2) Create venv + install dependencies
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+3) Run the app
+```bash
+python main.py
+```
+
+---
+
+
