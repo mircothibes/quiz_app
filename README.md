@@ -93,3 +93,17 @@ python main.py
 - Export/import question sets (JSON)
 
 ---
+
+## 🤝 Contributing
+Pull requests are welcome! For major changes, please open an issue to discuss what you'd like to change.
+
+---
+
+## 📜 License
+MIT License — feel free to use this project for learning or production.
+
+---
+
+## 🧑‍💻 Author
+Marcos Vinicius Thibes Kemer
+
