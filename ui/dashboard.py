@@ -192,9 +192,9 @@ class DashboardWidget(QWidget):
         grid.setVerticalSpacing(14)
         self._stats_grid = grid
 
-        card_total, self._stats_total_label = self._create_stat_card("Total Attempts", "0")
-        card_best, self._stats_best_label = self._create_stat_card("Best Score", "0%")
-        card_last, self._stats_last_label = self._create_stat_card("Last Score", "0%")
+        card_total, self._stats_total_label = self._create_stat_card("Total Attempts", "0", "#3498db")
+        card_best, self._stats_best_label = self._create_stat_card("Best Score", "0%", "#27ae60")
+        card_last, self._stats_last_label = self._create_stat_card("Last Score", "0%", "#f39c12")
 
         self._stats_cards = [card_total, card_best, card_last]
         outer.addWidget(grid_host)
@@ -352,36 +352,67 @@ class DashboardWidget(QWidget):
     # ---------------------------------------------------------------------
     # Components
     # ---------------------------------------------------------------------
-    def _create_stat_card(self, title: str, value: str) -> tuple[QFrame, QLabel]:
-        """Create a stat card widget."""
+    def _create_stat_card(self, title: str, value: str, bg_color: str) -> tuple[QFrame, QLabel]:
+        """Create a stat card with a full colored background.
+
+        Args:
+            title: Card title (e.g. "Total Attempts").
+            value: Initial value string.
+            bg_color: Background hex color (e.g. "#3498db").
+
+        Returns:
+            (frame, value_label)
+        """
         frame = QFrame()
+        frame.setObjectName("statCard")
+        frame.setStyleSheet(
+            f"""
+            QFrame#statCard {{
+                background-color: {bg_color};
+                border: none;
+                border-radius: 12px;
+                padding: 16px;
+            }}
+            """
+        )
         frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         frame.setMinimumHeight(110)
 
-        frame.setStyleSheet(
-            """
-            QFrame {
-                background-color: white;
-                border: 2px solid #ecf0f1;
-                border-radius: 12px;
-                padding: 12px;
-            }
-            """
-        )
-
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(6)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: bold;")
+        title_label.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+                border: none;
+                color: rgba(255, 255, 255, 0.90);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            """
+        )
         layout.addWidget(title_label)
 
         value_label = QLabel(value)
-        value_label.setStyleSheet("color: #2c3e50; font-size: 24px; font-weight: bold;")
+        value_label.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+                border: none;
+                color: white;
+                font-size: 28px;
+                font-weight: 800;
+            }
+            """
+        )
         layout.addWidget(value_label)
 
-        return frame, value_label
+        layout.addStretch(1)
+
+        return frame, value_label  
 
     def _create_nav_button(self, title: str, description: str, color: str) -> QPushButton:
         """Create a styled navigation button with safe sizing."""
