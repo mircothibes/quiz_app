@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-
+from dataclasses import dataclass
 from pathlib import Path
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, pyqtSignal
+from typing import Optional, Tuple
+
+from PyQt5.QtCore import Qt, QRect, pyqtSignal
+from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
-    QSizePolicy,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -14,6 +15,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -23,11 +25,78 @@ from db import db
 logger = logging.getLogger(__name__)
 
 
-class RegisterDialog(QDialog):
-    """Dialog to create a new user account."""
+@dataclass(frozen=True)
+class _UiConstants:
+    """Central place for UI constants used in the login screen."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    # Layout
+    MARGIN_LEFT: int = 60
+    MARGIN_TOP: int = 30
+    MARGIN_RIGHT: int = 60
+    MARGIN_BOTTOM: int = 30
+    SPACING: int = 12
+
+    # Logo
+    LOGO_FILENAME: str = "quiz_app.png"
+    LOGO_TARGET_HEIGHT: int = 720  # adjust freely (e.g., 520, 600, 720)
+
+    # Validation
+    MIN_USERNAME_LEN: int = 3
+    MIN_PASSWORD_LEN: int = 4
+
+
+C = _UiConstants()
+
+
+def _trim_transparent_borders(img: QImage) -> QImage:
+    """Crop fully-transparent borders from an image (PNG with alpha).
+
+    This fixes a common issue where a logo PNG has a large transparent canvas.
+    Without trimming, scaling the pixmap to a height (e.g., 720px) makes the
+    *transparent area* huge, pushing the rest of the UI down.
+
+    Args:
+        img: Source image (ideally with alpha channel).
+
+    Returns:
+        Cropped QImage. If the image has no alpha channel or cropping fails,
+        returns the original image.
+    """
+    if img.isNull() or not img.hasAlphaChannel():
+        return img
+
+    w, h = img.width(), img.height()
+    left, right = w, -1
+    top, bottom = h, -1
+
+    for y in range(h):
+        for x in range(w):
+            if img.pixelColor(x, y).alpha() > 0:
+                if x < left:
+                    left = x
+                if x > right:
+                    right = x
+                if y < top:
+                    top = y
+                if y > bottom:
+                    bottom = y
+
+    if right >= left and bottom >= top:
+        return img.copy(QRect(left, top, right - left + 1, bottom - top + 1))
+
+    return img
+
+
+class RegisterDialog(QDialog):
+    """Dialog window to capture user credentials for account creation.
+
+    This dialog performs only UI validation (length checks, password match).
+    The actual DB insert is done by LoginWidget after the dialog is accepted.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+
         self.setWindowTitle("Create Account")
         self.setModal(True)
         self.setMinimumWidth(380)
@@ -43,6 +112,11 @@ class RegisterDialog(QDialog):
         self.confirm_input.setPlaceholderText("Confirm password")
         self.confirm_input.setEchoMode(QLineEdit.Password)
 
+        self._build_ui()
+        self._wire_signals()
+
+    def _build_ui(self) -> None:
+        """Build dialog widgets and layout."""
         form = QFormLayout()
         form.addRow("Username:", self.username_input)
         form.addRow("Password:", self.password_input)
@@ -84,28 +158,46 @@ class RegisterDialog(QDialog):
         btn_row.addWidget(self.create_btn)
 
         root = QVBoxLayout(self)
+
         title = QLabel("🆕 Create a new account")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; margin: 8px 0;")
+        title.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #2c3e50; margin: 8px 0;"
+        )
+
         root.addWidget(title)
         root.addLayout(form)
         root.addSpacing(8)
         root.addLayout(btn_row)
 
+    def _wire_signals(self) -> None:
+        """Connect dialog events to handlers."""
         self.cancel_btn.clicked.connect(self.reject)
         self.create_btn.clicked.connect(self._on_create_clicked)
 
+        # Enter key behavior
+        self.confirm_input.returnPressed.connect(self._on_create_clicked)
+
     def _on_create_clicked(self) -> None:
+        """Validate inputs and accept dialog if valid."""
         username = self.username_input.text().strip()
         password = self.password_input.text()
         confirm = self.confirm_input.text()
 
-        if len(username) < 3:
-            QMessageBox.warning(self, "Invalid Username", "Username must be at least 3 characters.")
+        if len(username) < C.MIN_USERNAME_LEN:
+            QMessageBox.warning(
+                self,
+                "Invalid Username",
+                f"Username must be at least {C.MIN_USERNAME_LEN} characters.",
+            )
             return
 
-        if len(password) < 4:
-            QMessageBox.warning(self, "Invalid Password", "Password must be at least 4 characters.")
+        if len(password) < C.MIN_PASSWORD_LEN:
+            QMessageBox.warning(
+                self,
+                "Invalid Password",
+                f"Password must be at least {C.MIN_PASSWORD_LEN} characters.",
+            )
             return
 
         if password != confirm:
@@ -114,12 +206,18 @@ class RegisterDialog(QDialog):
 
         self.accept()
 
-    def get_values(self) -> tuple[str, str]:
+    def get_values(self) -> Tuple[str, str]:
+        """Return (username, password) typed in the dialog."""
         return self.username_input.text().strip(), self.password_input.text()
 
 
 class LoginWidget(QWidget):
-    """Login page with Create Account option."""
+    """Login page with Create Account option.
+
+    Signals:
+        login_successful(username, user_id): emitted after a successful login/registration.
+        login_success(username, user_id): alias for compatibility.
+    """
 
     login_successful = pyqtSignal(str, int)  # (username, user_id)
     login_success = pyqtSignal(str, int)     # alias for compatibility
@@ -127,37 +225,54 @@ class LoginWidget(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._build_ui()
+        self._wire_signals()
 
+    # ------------------------------------------------------------------
+    # UI building
+    # ------------------------------------------------------------------
     def _build_ui(self) -> None:
+        """Build the full login UI layout."""
         root = QVBoxLayout(self)
-        root.setContentsMargins(60, 40, 60, 40)
-        root.setSpacing(14)
+        root.setContentsMargins(C.MARGIN_LEFT, C.MARGIN_TOP, C.MARGIN_RIGHT, C.MARGIN_BOTTOM)
+        root.setSpacing(C.SPACING)
         root.setAlignment(Qt.AlignTop)
 
-        # -------------------------
-        # Logo
-        # -------------------------
-        logo_label = QLabel()
-        logo_label.setAlignment(Qt.AlignCenter)
+        self._add_logo(root)
+        self._add_title(root)
+        self._add_inputs(root)
+        self._add_status(root)
+        self._add_buttons(root)
 
-        logo_path = Path(__file__).resolve().parents[1] / "assets" / "quiz_app.png"
-        pixmap = QPixmap(str(logo_path))
+        # NOTE:
+        # Do NOT add root.addStretch(1) here.
+        # Stretch can push content away depending on widget size policies.
 
-        if pixmap.isNull():
+    def _add_logo(self, root: QVBoxLayout) -> None:
+        """Add the logo label at the top (with transparency trimming)."""
+        self.logo_label = QLabel()
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        logo_path = Path(__file__).resolve().parents[1] / "assets" / C.LOGO_FILENAME
+
+        img = QImage(str(logo_path))
+        if img.isNull():
             logger.warning("Logo not found or invalid image: %s", logo_path)
-        else:
-            scaled = pixmap.scaledToHeight(720, Qt.SmoothTransformation)
-            logo_label.setPixmap(scaled)
+            return
 
-            # Key: prevent the label from expanding vertically and creating empty space
-            logo_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            logo_label.setFixedHeight(scaled.height())
+        img = _trim_transparent_borders(img)
+        pixmap = QPixmap.fromImage(img)
 
-            root.addWidget(logo_label)
+        scaled = pixmap.scaledToHeight(C.LOGO_TARGET_HEIGHT, Qt.SmoothTransformation)
+        self.logo_label.setPixmap(scaled)
 
-        # -------------------------
-        # Title + Subtitle
-        # -------------------------
+        # Important: avoid label expanding vertically and creating huge empty space.
+        self.logo_label.setFixedHeight(scaled.height())
+
+        root.addWidget(self.logo_label)
+
+    def _add_title(self, root: QVBoxLayout) -> None:
+        """Add title + subtitle labels."""
         title = QLabel("🔐 Advanced Quiz App")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("font-size: 28px; font-weight: bold; color: #2c3e50;")
@@ -168,34 +283,30 @@ class LoginWidget(QWidget):
         subtitle.setStyleSheet("font-size: 14px; color: #7f8c8d; margin-bottom: 6px;")
         root.addWidget(subtitle)
 
-        # -------------------------
-        # Inputs
-        # -------------------------
+    def _add_inputs(self, root: QVBoxLayout) -> None:
+        """Add username + password inputs."""
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Username")
         self.username_input.setMinimumHeight(40)
         self.username_input.setStyleSheet(self._input_style())
+        root.addWidget(self.username_input)
 
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("Password")
         self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setMinimumHeight(40)
         self.password_input.setStyleSheet(self._input_style())
-
-        root.addWidget(self.username_input)
         root.addWidget(self.password_input)
 
-        # -------------------------
-        # Status
-        # -------------------------
+    def _add_status(self, root: QVBoxLayout) -> None:
+        """Add a label for success/error hints."""
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-size: 12px; color: #7f8c8d;")
         root.addWidget(self.status_label)
 
-        # -------------------------
-        # Buttons
-        # -------------------------
+    def _add_buttons(self, root: QVBoxLayout) -> None:
+        """Add Login + Create Account buttons."""
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
 
@@ -238,18 +349,18 @@ class LoginWidget(QWidget):
         btn_row.addWidget(self.create_btn)
         root.addLayout(btn_row)
 
-        # Push everything to the top, leave free space below
-        root.addStretch(1)
-
-        # -------------------------
-        # Signals
-        # -------------------------
+    def _wire_signals(self) -> None:
+        """Connect widget events to handlers."""
         self.login_btn.clicked.connect(self._on_login_clicked)
         self.create_btn.clicked.connect(self._on_create_account_clicked)
-        self.password_input.returnPressed.connect(self._on_login_clicked)    
+        self.password_input.returnPressed.connect(self._on_login_clicked)
 
+    # ------------------------------------------------------------------
+    # Styles
+    # ------------------------------------------------------------------
     @staticmethod
     def _input_style() -> str:
+        """Return stylesheet for text inputs."""
         return """
         QLineEdit {
             border: 2px solid #bdc3c7;
@@ -263,7 +374,11 @@ class LoginWidget(QWidget):
         }
         """
 
+    # ------------------------------------------------------------------
+    # DB helpers
+    # ------------------------------------------------------------------
     def _ensure_db(self) -> bool:
+        """Ensure the database is connected, showing a friendly error if not."""
         if db.is_connected():
             return True
 
@@ -277,7 +392,11 @@ class LoginWidget(QWidget):
         )
         return False
 
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
     def _on_login_clicked(self) -> None:
+        """Validate user input, authenticate, and emit login signals on success."""
         username = self.username_input.text().strip()
         password = self.password_input.text()
 
@@ -288,25 +407,23 @@ class LoginWidget(QWidget):
         if not self._ensure_db():
             return
 
-        self.status_label.setText("Checking credentials...")
-        self.status_label.setStyleSheet("font-size: 12px; color: #7f8c8d;")
+        self._set_status("Checking credentials...", "#7f8c8d")
 
         result = db.authenticate_user(username, password)
         if not result:
-            self.status_label.setText("❌ Invalid username or password.")
-            self.status_label.setStyleSheet("font-size: 12px; color: #e74c3c;")
+            self._set_status("❌ Invalid username or password.", "#e74c3c")
             return
 
-        user_id, user_name = result[0], result[1]
-        self.status_label.setText("✅ Login successful.")
-        self.status_label.setStyleSheet("font-size: 12px; color: #27ae60;")
+        user_id, user_name = int(result[0]), str(result[1])
 
+        self._set_status("✅ Login successful.", "#27ae60")
         logger.info("Login successful for username=%s", user_name)
 
         self.login_successful.emit(user_name, user_id)
         self.login_success.emit(user_name, user_id)
 
     def _on_create_account_clicked(self) -> None:
+        """Open registration dialog, create user, and log in automatically."""
         if not self._ensure_db():
             return
 
@@ -329,8 +446,13 @@ class LoginWidget(QWidget):
 
         self.username_input.setText(username)
         self.password_input.setText("")
-        self.status_label.setText("✅ Account created and logged in.")
-        self.status_label.setStyleSheet("font-size: 12px; color: #27ae60;")
+        self._set_status("✅ Account created and logged in.", "#27ae60")
 
-        self.login_successful.emit(username, created_id)
-        self.login_success.emit(username, created_id)
+        self.login_successful.emit(username, int(created_id))
+        self.login_success.emit(username, int(created_id))
+
+    def _set_status(self, text: str, color_hex: str) -> None:
+        """Update status label text and color."""
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"font-size: 12px; color: {color_hex};")
+
