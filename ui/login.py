@@ -480,4 +480,3 @@ class LoginWidget(QWidget):
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"font-size: 12px; color: {color_hex};")
 
-
