@@ -36,9 +36,11 @@ class _UiConstants:
     MARGIN_BOTTOM: int = 30
     SPACING: int = 12
 
-    # Logo
+    # Logo (responsive sizing)
     LOGO_FILENAME: str = "quiz_app.png"
-    LOGO_TARGET_HEIGHT: int = 720  # adjust freely (e.g., 520, 600, 720)
+    LOGO_HEIGHT_RATIO: float = 0.33  # Logo will use ~33% of the current window height
+    LOGO_MAX_HEIGHT: int = 380       # Hard cap (prevents huge logo on big screens)
+    LOGO_MIN_HEIGHT: int = 140       # Prevents logo from becoming too tiny
 
     # Validation
     MIN_USERNAME_LEN: int = 3
@@ -49,18 +51,16 @@ C = _UiConstants()
 
 
 def _trim_transparent_borders(img: QImage) -> QImage:
-    """Crop fully-transparent borders from an image (PNG with alpha).
+    """Crop fully-transparent borders from a PNG (alpha channel).
 
-    This fixes a common issue where a logo PNG has a large transparent canvas.
-    Without trimming, scaling the pixmap to a height (e.g., 720px) makes the
-    *transparent area* huge, pushing the rest of the UI down.
+    Some exported logos have a huge transparent canvas around the real drawing.
+    Trimming avoids wasting space when we scale the logo.
 
     Args:
-        img: Source image (ideally with alpha channel).
+        img: Source image.
 
     Returns:
-        Cropped QImage. If the image has no alpha channel or cropping fails,
-        returns the original image.
+        Cropped QImage if alpha content is found; otherwise the original image.
     """
     if img.isNull() or not img.hasAlphaChannel():
         return img
@@ -88,10 +88,11 @@ def _trim_transparent_borders(img: QImage) -> QImage:
 
 
 class RegisterDialog(QDialog):
-    """Dialog window to capture user credentials for account creation.
+    """Dialog window for account creation (UI validation only).
 
-    This dialog performs only UI validation (length checks, password match).
-    The actual DB insert is done by LoginWidget after the dialog is accepted.
+    Notes:
+        The dialog validates inputs locally (length, match).
+        The database insertion is performed by LoginWidget after acceptance.
     """
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -112,6 +113,9 @@ class RegisterDialog(QDialog):
         self.confirm_input.setPlaceholderText("Confirm password")
         self.confirm_input.setEchoMode(QLineEdit.Password)
 
+        self.create_btn = QPushButton("Create")
+        self.cancel_btn = QPushButton("Cancel")
+
         self._build_ui()
         self._wire_signals()
 
@@ -121,9 +125,6 @@ class RegisterDialog(QDialog):
         form.addRow("Username:", self.username_input)
         form.addRow("Password:", self.password_input)
         form.addRow("Confirm:", self.confirm_input)
-
-        self.create_btn = QPushButton("Create")
-        self.cancel_btn = QPushButton("Cancel")
 
         self.create_btn.setStyleSheet(
             """
@@ -161,9 +162,7 @@ class RegisterDialog(QDialog):
 
         title = QLabel("🆕 Create a new account")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(
-            "font-size: 18px; font-weight: bold; color: #2c3e50; margin: 8px 0;"
-        )
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; margin: 8px 0;")
 
         root.addWidget(title)
         root.addLayout(form)
@@ -174,8 +173,6 @@ class RegisterDialog(QDialog):
         """Connect dialog events to handlers."""
         self.cancel_btn.clicked.connect(self.reject)
         self.create_btn.clicked.connect(self._on_create_clicked)
-
-        # Enter key behavior
         self.confirm_input.returnPressed.connect(self._on_create_clicked)
 
     def _on_create_clicked(self) -> None:
@@ -185,19 +182,11 @@ class RegisterDialog(QDialog):
         confirm = self.confirm_input.text()
 
         if len(username) < C.MIN_USERNAME_LEN:
-            QMessageBox.warning(
-                self,
-                "Invalid Username",
-                f"Username must be at least {C.MIN_USERNAME_LEN} characters.",
-            )
+            QMessageBox.warning(self, "Invalid Username", f"Username must be at least {C.MIN_USERNAME_LEN} characters.")
             return
 
         if len(password) < C.MIN_PASSWORD_LEN:
-            QMessageBox.warning(
-                self,
-                "Invalid Password",
-                f"Password must be at least {C.MIN_PASSWORD_LEN} characters.",
-            )
+            QMessageBox.warning(self, "Invalid Password", f"Password must be at least {C.MIN_PASSWORD_LEN} characters.")
             return
 
         if password != confirm:
@@ -214,8 +203,13 @@ class RegisterDialog(QDialog):
 class LoginWidget(QWidget):
     """Login page with Create Account option.
 
+    Behavior:
+        - Displays a responsive logo that scales with the window size.
+        - Authenticates user and emits login signals.
+        - Creates account through a modal dialog and logs the user in automatically.
+
     Signals:
-        login_successful(username, user_id): emitted after a successful login/registration.
+        login_successful(username, user_id): emitted after successful login/registration.
         login_success(username, user_id): alias for compatibility.
     """
 
@@ -224,8 +218,20 @@ class LoginWidget(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+
+        self._logo_pixmap_original: Optional[QPixmap] = None
+        self.logo_label: Optional[QLabel] = None
+
         self._build_ui()
         self._wire_signals()
+
+    # ------------------------------------------------------------------
+    # Qt events
+    # ------------------------------------------------------------------
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        """Keep the logo responsive when the window is resized."""
+        super().resizeEvent(event)
+        self._update_logo_pixmap()
 
     # ------------------------------------------------------------------
     # UI building
@@ -243,15 +249,14 @@ class LoginWidget(QWidget):
         self._add_status(root)
         self._add_buttons(root)
 
-        # NOTE:
-        # Do NOT add root.addStretch(1) here.
-        # Stretch can push content away depending on widget size policies.
+        # Keep everything at top and let extra space stay at bottom
+        root.addStretch(1)
 
     def _add_logo(self, root: QVBoxLayout) -> None:
-        """Add the logo label at the top (with transparency trimming)."""
+        """Add the logo label at the top and load the original pixmap."""
         self.logo_label = QLabel()
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.logo_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         logo_path = Path(__file__).resolve().parents[1] / "assets" / C.LOGO_FILENAME
 
@@ -261,15 +266,34 @@ class LoginWidget(QWidget):
             return
 
         img = _trim_transparent_borders(img)
-        pixmap = QPixmap.fromImage(img)
-
-        scaled = pixmap.scaledToHeight(C.LOGO_TARGET_HEIGHT, Qt.SmoothTransformation)
-        self.logo_label.setPixmap(scaled)
-
-        # Important: avoid label expanding vertically and creating huge empty space.
-        self.logo_label.setFixedHeight(scaled.height())
+        self._logo_pixmap_original = QPixmap.fromImage(img)
 
         root.addWidget(self.logo_label)
+        self._update_logo_pixmap()
+
+    def _update_logo_pixmap(self) -> None:
+        """Scale the logo according to current window size (definitive fix)."""
+        if self.logo_label is None:
+            return
+        if self._logo_pixmap_original is None or self._logo_pixmap_original.isNull():
+            return
+
+        available_w = max(200, self.width() - (C.MARGIN_LEFT + C.MARGIN_RIGHT))
+        dynamic_h = int(self.height() * C.LOGO_HEIGHT_RATIO)
+
+        target_h = max(C.LOGO_MIN_HEIGHT, min(C.LOGO_MAX_HEIGHT, dynamic_h))
+
+        scaled = self._logo_pixmap_original.scaled(
+            available_w,
+            target_h,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+
+        self.logo_label.setPixmap(scaled)
+
+        # IMPORTANT: do NOT fix height; just cap it so the layout can shrink/grow.
+        self.logo_label.setMaximumHeight(scaled.height())
 
     def _add_title(self, root: QVBoxLayout) -> None:
         """Add title + subtitle labels."""
@@ -455,4 +479,5 @@ class LoginWidget(QWidget):
         """Update status label text and color."""
         self.status_label.setText(text)
         self.status_label.setStyleSheet(f"font-size: 12px; color: {color_hex};")
+
 
