@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import logging
 
+from pathlib import Path
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
+    QSizePolicy,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -129,7 +132,32 @@ class LoginWidget(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(60, 40, 60, 40)
         root.setSpacing(14)
+        root.setAlignment(Qt.AlignTop)
 
+        # -------------------------
+        # Logo
+        # -------------------------
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
+
+        logo_path = Path(__file__).resolve().parents[1] / "assets" / "quiz_app.png"
+        pixmap = QPixmap(str(logo_path))
+
+        if pixmap.isNull():
+            logger.warning("Logo not found or invalid image: %s", logo_path)
+        else:
+            scaled = pixmap.scaledToHeight(720, Qt.SmoothTransformation)
+            logo_label.setPixmap(scaled)
+
+            # Key: prevent the label from expanding vertically and creating empty space
+            logo_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            logo_label.setFixedHeight(scaled.height())
+
+            root.addWidget(logo_label)
+
+        # -------------------------
+        # Title + Subtitle
+        # -------------------------
         title = QLabel("🔐 Advanced Quiz App")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("font-size: 28px; font-weight: bold; color: #2c3e50;")
@@ -140,26 +168,34 @@ class LoginWidget(QWidget):
         subtitle.setStyleSheet("font-size: 14px; color: #7f8c8d; margin-bottom: 6px;")
         root.addWidget(subtitle)
 
+        # -------------------------
+        # Inputs
+        # -------------------------
         self.username_input = QLineEdit()
         self.username_input.setPlaceholderText("Username")
         self.username_input.setMinimumHeight(40)
+        self.username_input.setStyleSheet(self._input_style())
 
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("Password")
         self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setMinimumHeight(40)
-
-        self.username_input.setStyleSheet(self._input_style())
         self.password_input.setStyleSheet(self._input_style())
 
         root.addWidget(self.username_input)
         root.addWidget(self.password_input)
 
+        # -------------------------
+        # Status
+        # -------------------------
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-size: 12px; color: #7f8c8d;")
         root.addWidget(self.status_label)
 
+        # -------------------------
+        # Buttons
+        # -------------------------
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
 
@@ -202,11 +238,15 @@ class LoginWidget(QWidget):
         btn_row.addWidget(self.create_btn)
         root.addLayout(btn_row)
 
+        # Push everything to the top, leave free space below
         root.addStretch(1)
 
+        # -------------------------
+        # Signals
+        # -------------------------
         self.login_btn.clicked.connect(self._on_login_clicked)
         self.create_btn.clicked.connect(self._on_create_account_clicked)
-        self.password_input.returnPressed.connect(self._on_login_clicked)
+        self.password_input.returnPressed.connect(self._on_login_clicked)    
 
     @staticmethod
     def _input_style() -> str:
