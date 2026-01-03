@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from typing import Optional
 
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -25,36 +24,40 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class _Ui:
-    """UI constants for the dashboard layout and styling."""
+    """UI constants for the dashboard screen."""
 
+    # Centered layout
     CONTENT_MAX_WIDTH: int = 1100
+    CONTENT_MARGIN: int = 24
+    CONTENT_SPACING: int = 18
 
-    # Content padding
-    PAD: int = 24
-    SPACING: int = 18
+    # Responsive breakpoints
+    BP_ONE_COL: int = 720
+    BP_TWO_COL: int = 980
+
+    # Card spacing
+    GRID_H_SPACING: int = 14
+    GRID_V_SPACING: int = 14
 
     # Header
-    HEADER_MIN_HEIGHT: int = 110
+    HEADER_MIN_HEIGHT: int = 140
 
-    # Stats responsiveness
-    COLS_1_MAX: int = 720
-    COLS_2_MAX: int = 980
-
-    # Recent list
-    RECENT_LIMIT: int = 5
+    # Activity cards
+    ACTIVITY_CARD_MIN_HEIGHT: int = 74
+    ACTIVITY_SCORE_PILL_MIN_WIDTH: int = 68
 
 
-C = _Ui()
+UI = _Ui()
 
 
 class DashboardWidget(QWidget):
-    """Dashboard screen that shows quick actions, user stats, and recent activity.
+    """Dashboard screen: quick actions, stats, and recent activity.
 
-    Goals:
-        - Make the first action obvious (Start Quiz).
-        - Keep Logout accessible but not dominant.
-        - Keep content centered on large screens with scroll fallback.
-        - Keep stats cards responsive: 1/2/3 columns based on window width.
+    Responsibilities:
+    - Provide the main navigation actions (start quiz, admin, logout)
+    - Display lightweight user stats
+    - Display recent attempts in a compact "activity" list
+    - Keep layout responsive and centered (comfortable on wide screens)
     """
 
     browse_categories_clicked = pyqtSignal()
@@ -66,24 +69,26 @@ class DashboardWidget(QWidget):
         self.username = username
         self.user_id = user_id
 
-        # Stats UI references
-        self._stats_total_value: Optional[QLabel] = None
-        self._stats_best_value: Optional[QLabel] = None
-        self._stats_last_value: Optional[QLabel] = None
+        # Quick actions (responsive grid)
+        self._quick_grid: Optional[QGridLayout] = None
+        self._quick_buttons: list[QPushButton] = []
+        self._quick_columns: int = 2
 
-        self._stats_total_sub: Optional[QLabel] = None
-        self._stats_best_sub: Optional[QLabel] = None
-        self._stats_last_sub: Optional[QLabel] = None
-
-        # Recent activity UI references
-        self._recent_list_host: Optional[QWidget] = None
-        self._recent_list_layout: Optional[QVBoxLayout] = None
-        self._recent_info_label: Optional[QLabel] = None
-
-        # Responsive stats cards
-        self._stats_cards: list[QFrame] = []
+        # Stats (responsive grid)
         self._stats_grid: Optional[QGridLayout] = None
-        self._stats_columns: int = 3  # current applied columns
+        self._stats_cards: list[QFrame] = []
+        self._stats_columns: int = 3
+
+        self._stats_total_value: Optional[QLabel] = None
+        self._stats_total_footer: Optional[QLabel] = None
+        self._stats_best_value: Optional[QLabel] = None
+        self._stats_best_footer: Optional[QLabel] = None
+        self._stats_last_value: Optional[QLabel] = None
+        self._stats_last_footer: Optional[QLabel] = None
+
+        # Activity list
+        self._activity_list: Optional[QVBoxLayout] = None
+        self._activity_info: Optional[QLabel] = None
 
         self._build_ui()
         self.refresh()
@@ -100,7 +105,6 @@ class DashboardWidget(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
 
-        # Wrapper centers the content
         wrapper = QWidget()
         wrapper_layout = QHBoxLayout(wrapper)
         wrapper_layout.setContentsMargins(0, 0, 0, 0)
@@ -108,12 +112,12 @@ class DashboardWidget(QWidget):
         wrapper_layout.addStretch(1)
 
         content = QWidget()
-        content.setMaximumWidth(C.CONTENT_MAX_WIDTH)
+        content.setMaximumWidth(UI.CONTENT_MAX_WIDTH)
         content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(C.PAD, C.PAD, C.PAD, C.PAD)
-        content_layout.setSpacing(C.SPACING)
+        content_layout.setContentsMargins(UI.CONTENT_MARGIN, UI.CONTENT_MARGIN, UI.CONTENT_MARGIN, UI.CONTENT_MARGIN)
+        content_layout.setSpacing(UI.CONTENT_SPACING)
         content_layout.setAlignment(Qt.AlignTop)
 
         content_layout.addWidget(self._create_header())
@@ -130,14 +134,11 @@ class DashboardWidget(QWidget):
 
         self._update_responsive_layout()
 
-    # ---------------------------------------------------------------------
-    # Header + Quick actions
-    # ---------------------------------------------------------------------
     def _create_header(self) -> QFrame:
-        """Create the top header with a compact welcome and a small Logout button."""
+        """Create header with welcome + subtitle + logout button."""
         header = QFrame()
         header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        header.setMinimumHeight(C.HEADER_MIN_HEIGHT)
+        header.setMinimumHeight(UI.HEADER_MIN_HEIGHT)
         header.setStyleSheet(
             """
             QFrame {
@@ -145,166 +146,128 @@ class DashboardWidget(QWidget):
                     x1:0, y1:0, x2:1, y2:0,
                     stop:0 #3498db, stop:1 #2980b9
                 );
-                border-radius: 12px;
+                border-radius: 14px;
             }
             """
         )
 
-        layout = QVBoxLayout(header)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(8)
+        outer = QVBoxLayout(header)
+        outer.setContentsMargins(18, 16, 18, 16)
+        outer.setSpacing(8)
 
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
 
-        title = QLabel(f"👋 Welcome back, {self.username}")
-        title.setStyleSheet("font-size: 22px; font-weight: 800; color: white;")
-        title.setWordWrap(True)
+        welcome = QLabel(f"👋 Welcome back, {self.username}")
+        welcome.setStyleSheet("font-size: 26px; font-weight: 800; color: white;")
+        welcome.setWordWrap(True)
 
-        logout_btn = QPushButton("🚪 Logout")
+        logout_btn = QPushButton("🚪  Logout")
         logout_btn.setCursor(Qt.PointingHandCursor)
-        logout_btn.setFixedHeight(34)
         logout_btn.setStyleSheet(
             """
             QPushButton {
                 background-color: rgba(255, 255, 255, 0.18);
                 color: white;
-                border: 1px solid rgba(255, 255, 255, 0.22);
+                border: 1px solid rgba(255, 255, 255, 0.25);
                 border-radius: 10px;
-                padding: 6px 12px;
-                font-size: 12px;
+                padding: 8px 14px;
+                font-size: 13px;
                 font-weight: 700;
             }
-            QPushButton:hover { background-color: rgba(255, 255, 255, 0.28); }
-            QPushButton:pressed { background-color: rgba(255, 255, 255, 0.22); }
+            QPushButton:hover { background-color: rgba(255, 255, 255, 0.26); }
+            QPushButton:pressed { background-color: rgba(255, 255, 255, 0.20); }
             """
         )
         logout_btn.clicked.connect(self.logout_clicked.emit)
 
-        top_row.addWidget(title, 1)
+        top_row.addWidget(welcome, 1)
+        top_row.addStretch(1)
         top_row.addWidget(logout_btn, 0, Qt.AlignRight)
 
         subtitle = QLabel("Ready for your next quiz?")
-        subtitle.setStyleSheet("font-size: 13px; color: rgba(236, 240, 241, 0.95);")
+        subtitle.setStyleSheet("font-size: 14px; color: rgba(255, 255, 255, 0.90);")
         subtitle.setWordWrap(True)
 
-        layout.addLayout(top_row)
-        layout.addWidget(subtitle)
+        outer.addLayout(top_row)
+        outer.addWidget(subtitle)
 
         return header
 
     def _create_quick_actions(self) -> QWidget:
-        """Create the main action area (the most important actions first)."""
+        """Create the 'Quick Actions' section with primary actions."""
         container = QWidget()
         outer = QVBoxLayout(container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(10)
 
         title = QLabel("⚡ Quick Actions")
-        title.setStyleSheet("font-size: 18px; font-weight: 800; color: #2c3e50;")
+        title.setStyleSheet("font-size: 20px; font-weight: 800; color: #2c3e50;")
         outer.addWidget(title)
 
-        row = QHBoxLayout()
-        row.setSpacing(12)
+        grid_host = QWidget()
+        grid = QGridLayout(grid_host)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(UI.GRID_H_SPACING)
+        grid.setVerticalSpacing(UI.GRID_V_SPACING)
+        self._quick_grid = grid
 
         start_btn = self._create_action_button(
             title="▶ Start Quiz",
             subtitle="Pick a category and begin",
             color="#27ae60",
-            is_primary=True,
         )
         start_btn.clicked.connect(self.browse_categories_clicked.emit)
 
         admin_btn = self._create_action_button(
-            title="⚙ Manage Questions",
+            title="⚙ Manage Questions    [Admin]",
             subtitle="Add, edit, or delete questions",
             color="#f39c12",
-            is_primary=False,
-            badge_text="Admin",
         )
         admin_btn.clicked.connect(self.manage_questions_clicked.emit)
 
-        row.addWidget(start_btn)
-        row.addWidget(admin_btn)
+        self._quick_buttons = [start_btn, admin_btn]
+        outer.addWidget(grid_host)
 
-        outer.addLayout(row)
+        self._reflow_quick_actions(columns=2)
         return container
 
-    def _create_action_button(
-        self,
-        title: str,
-        subtitle: str,
-        color: str,
-        is_primary: bool,
-        badge_text: Optional[str] = None,
-    ) -> QPushButton:
-        """Create a large, friendly action button with optional badge."""
-        badge = f"   [{badge_text}]" if badge_text else ""
-        weight = "800" if is_primary else "700"
-        btn = QPushButton(f"{title}{badge}\n{subtitle}")
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        btn.setMinimumHeight(74)
-
-        btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                text-align: left;
-                padding: 16px;
-                background-color: {color};
-                color: white;
-                border: none;
-                border-radius: 12px;
-                font-size: 14px;
-                font-weight: {weight};
-            }}
-            QPushButton:hover {{
-                background-color: {self._darken_color(color)};
-            }}
-            QPushButton:pressed {{
-                background-color: {self._darken_color(color, 0.8)};
-            }}
-            """
-        )
-        return btn
-
-    # ---------------------------------------------------------------------
-    # Stats
-    # ---------------------------------------------------------------------
     def _create_stats_section(self) -> QWidget:
-        """Create the stats cards section (responsive columns + helpful subtext)."""
+        """Create the stats section with responsive cards."""
         container = QWidget()
         outer = QVBoxLayout(container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(10)
 
         title = QLabel("📊 Your Stats")
-        title.setStyleSheet("font-size: 18px; font-weight: 800; color: #2c3e50;")
+        title.setStyleSheet("font-size: 20px; font-weight: 800; color: #2c3e50;")
         outer.addWidget(title)
 
         grid_host = QWidget()
         grid = QGridLayout(grid_host)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(14)
-        grid.setVerticalSpacing(14)
+        grid.setHorizontalSpacing(UI.GRID_H_SPACING)
+        grid.setVerticalSpacing(UI.GRID_V_SPACING)
         self._stats_grid = grid
 
-        card_total, self._stats_total_value, self._stats_total_sub = self._create_stat_card(
+        card_total, self._stats_total_value, self._stats_total_footer = self._create_stat_card(
             title="Total Attempts",
             value="0",
-            subtext="—",
+            footer="Last 7 days: 0",
             bg_color="#3498db",
         )
-        card_best, self._stats_best_value, self._stats_best_sub = self._create_stat_card(
+
+        card_best, self._stats_best_value, self._stats_best_footer = self._create_stat_card(
             title="Best Score",
             value="0%",
-            subtext="Personal best",
+            footer="Personal best",
             bg_color="#27ae60",
         )
-        card_last, self._stats_last_value, self._stats_last_sub = self._create_stat_card(
+
+        card_last, self._stats_last_value, self._stats_last_footer = self._create_stat_card(
             title="Last Score",
             value="0%",
-            subtext="Most recent attempt",
+            footer="Latest: —",
             bg_color="#f39c12",
         )
 
@@ -314,199 +277,83 @@ class DashboardWidget(QWidget):
         self._reflow_stats_cards(columns=3)
         return container
 
-    def _create_stat_card(
-        self,
-        title: str,
-        value: str,
-        subtext: str,
-        bg_color: str,
-    ) -> tuple[QFrame, QLabel, QLabel]:
-        """Create a stat card with colored background and a small helper line.
-
-        Args:
-            title: Card title (e.g. "Total Attempts").
-            value: Main value string (e.g. "13", "100%").
-            subtext: Secondary hint (e.g. "Last 7 days: 3").
-            bg_color: Background hex color.
-
-        Returns:
-            (frame, value_label, sub_label)
-        """
-        frame = QFrame()
-        frame.setObjectName("statCard")
-        frame.setStyleSheet(
-            f"""
-            QFrame#statCard {{
-                background-color: {bg_color};
-                border: none;
-                border-radius: 12px;
-                padding: 16px;
-            }}
-            """
-        )
-        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        frame.setMinimumHeight(118)
-
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(4)
-
-        title_label = QLabel(title)
-        title_label.setStyleSheet(
-            """
-            QLabel {
-                background: transparent;
-                color: rgba(255, 255, 255, 0.92);
-                font-size: 12px;
-                font-weight: 700;
-            }
-            """
-        )
-
-        value_label = QLabel(value)
-        value_label.setStyleSheet(
-            """
-            QLabel {
-                background: transparent;
-                color: white;
-                font-size: 30px;
-                font-weight: 900;
-            }
-            """
-        )
-
-        sub_label = QLabel(subtext)
-        sub_label.setStyleSheet(
-            """
-            QLabel {
-                background: transparent;
-                color: rgba(255, 255, 255, 0.85);
-                font-size: 12px;
-                font-weight: 600;
-            }
-            """
-        )
-
-        layout.addWidget(title_label)
-        layout.addWidget(value_label)
-        layout.addWidget(sub_label)
-        layout.addStretch(1)
-
-        return frame, value_label, sub_label
-
-    # ---------------------------------------------------------------------
-    # Recent activity (list instead of table)
-    # ---------------------------------------------------------------------
     def _create_recent_activity_section(self) -> QWidget:
-        """Create a compact 'Recent Activity' list (more readable than a table)."""
+        """Create recent activity as a vertical list of 'cards'."""
         container = QWidget()
         outer = QVBoxLayout(container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(10)
 
-        header_row = QHBoxLayout()
-        header_row.setContentsMargins(0, 0, 0, 0)
-
         title = QLabel("🕒 Recent Activity")
-        title.setStyleSheet("font-size: 18px; font-weight: 800; color: #2c3e50;")
-        header_row.addWidget(title, 1)
+        title.setStyleSheet("font-size: 20px; font-weight: 800; color: #2c3e50;")
+        outer.addWidget(title)
 
-        outer.addLayout(header_row)
+        list_host = QWidget()
+        list_layout = QVBoxLayout(list_host)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setSpacing(12)
+        list_layout.setAlignment(Qt.AlignTop)
 
-        host = QWidget()
-        host_layout = QVBoxLayout(host)
-        host_layout.setContentsMargins(0, 0, 0, 0)
-        host_layout.setSpacing(10)
-
-        self._recent_list_host = host
-        self._recent_list_layout = host_layout
-
-        outer.addWidget(host)
+        self._activity_list = list_layout
+        outer.addWidget(list_host)
 
         info = QLabel("")
         info.setStyleSheet("color: #7f8c8d; font-size: 12px;")
-        self._recent_info_label = info
+        self._activity_info = info
         outer.addWidget(info)
 
         return container
-
-    def _build_recent_item(self, created_at: str, category: str, score_text: str) -> QFrame:
-        """Build a single recent activity row as a card."""
-        card = QFrame()
-        card.setStyleSheet(
-            """
-            QFrame {
-                background-color: white;
-                border: 2px solid #bdc3c7;
-                border-radius: 12px;
-            }
-            """
-        )
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        row = QHBoxLayout(card)
-        row.setContentsMargins(14, 10, 14, 10)
-        row.setSpacing(12)
-
-        left = QVBoxLayout()
-        left.setSpacing(2)
-
-        date_lbl = QLabel(created_at)
-        date_lbl.setStyleSheet("color: #7f8c8d; font-size: 11px; font-weight: 600;")
-
-        cat_lbl = QLabel(category)
-        cat_lbl.setStyleSheet("color: #2c3e50; font-size: 13px; font-weight: 800;")
-        cat_lbl.setWordWrap(True)
-
-        left.addWidget(date_lbl)
-        left.addWidget(cat_lbl)
-
-        score_badge = QLabel(score_text)
-        score_badge.setAlignment(Qt.AlignCenter)
-        score_badge.setMinimumWidth(76)
-        score_badge.setStyleSheet(
-            """
-            QLabel {
-                background-color: #ecf0f1;
-                color: #2c3e50;
-                border-radius: 10px;
-                padding: 6px 10px;
-                font-size: 12px;
-                font-weight: 800;
-            }
-            """
-        )
-
-        row.addLayout(left, 1)
-        row.addWidget(score_badge, 0, Qt.AlignRight)
-
-        return card
 
     # ---------------------------------------------------------------------
     # Responsive behavior
     # ---------------------------------------------------------------------
     def resizeEvent(self, event) -> None:  # type: ignore[override]
-        """Update responsive sections when the window size changes."""
+        """Reflow responsive sections when window size changes."""
         super().resizeEvent(event)
         self._update_responsive_layout()
 
     def _update_responsive_layout(self) -> None:
-        """Adjust stat card columns based on available width."""
+        """Adjust responsive grids based on available width."""
         width = self.width()
 
-        if width < C.COLS_1_MAX:
-            cols = 1
-        elif width < C.COLS_2_MAX:
-            cols = 2
-        else:
-            cols = 3
+        # Quick actions: 1 col on small, 2 cols otherwise
+        quick_cols = 1 if width < UI.BP_ONE_COL else 2
+        if quick_cols != self._quick_columns:
+            self._reflow_quick_actions(columns=quick_cols)
+            self._quick_columns = quick_cols
 
-        if cols != self._stats_columns:
-            self._reflow_stats_cards(columns=cols)
-            self._stats_columns = cols
+        # Stats: 1 / 2 / 3 columns
+        if width < UI.BP_ONE_COL:
+            stats_cols = 1
+        elif width < UI.BP_TWO_COL:
+            stats_cols = 2
+        else:
+            stats_cols = 3
+
+        if stats_cols != self._stats_columns:
+            self._reflow_stats_cards(columns=stats_cols)
+            self._stats_columns = stats_cols
+
+    def _reflow_quick_actions(self, columns: int) -> None:
+        """Reposition quick action buttons in the grid."""
+        if self._quick_grid is None:
+            return
+
+        while self._quick_grid.count():
+            item = self._quick_grid.takeAt(0)
+            if item and item.widget():
+                item.widget().setParent(None)
+
+        for idx, btn in enumerate(self._quick_buttons):
+            row = idx // columns
+            col = idx % columns
+            self._quick_grid.addWidget(btn, row, col)
+
+        for c in range(columns):
+            self._quick_grid.setColumnStretch(c, 1)
 
     def _reflow_stats_cards(self, columns: int) -> None:
-        """Reposition stat cards in the grid using the given column count."""
+        """Reposition stats cards in the grid."""
         if self._stats_grid is None:
             return
 
@@ -533,87 +380,245 @@ class DashboardWidget(QWidget):
             return
 
         total_attempts, best_percent, last_percent = db.get_attempt_stats(self.user_id)
+        recent = db.get_recent_attempts(self.user_id, limit=5)
 
-        recent = db.get_recent_attempts(self.user_id, limit=C.RECENT_LIMIT)
-        attempts_for_7_days = db.get_recent_attempts(self.user_id, limit=50)
+        last_7_days = self._get_attempts_last_days(user_id=self.user_id, days=7)
 
-        # Main values
+        latest_created_at = recent[0][0] if recent else "—"
+
         if self._stats_total_value is not None:
             self._stats_total_value.setText(str(total_attempts))
+        if self._stats_total_footer is not None:
+            self._stats_total_footer.setText(f"Last 7 days: {last_7_days}")
+
         if self._stats_best_value is not None:
             self._stats_best_value.setText(f"{best_percent}%")
+        if self._stats_best_footer is not None:
+            self._stats_best_footer.setText("Personal best")
+
         if self._stats_last_value is not None:
             self._stats_last_value.setText(f"{last_percent}%")
-
-        # Subtext
-        last_7_days = self._count_attempts_last_days(attempts_for_7_days, days=7)
-        if self._stats_total_sub is not None:
-            self._stats_total_sub.setText(f"Last 7 days: {last_7_days}")
-
-        if self._stats_best_sub is not None:
-            self._stats_best_sub.setText("Personal best")
-
-        if self._stats_last_sub is not None:
-            if recent:
-                self._stats_last_sub.setText(f"Latest: {recent[0][0]}")
-            else:
-                self._stats_last_sub.setText("No attempts yet")
+        if self._stats_last_footer is not None:
+            self._stats_last_footer.setText(f"Latest: {latest_created_at}")
 
         self._populate_recent_activity(recent)
 
-    def _count_attempts_last_days(self, rows: list[tuple[str, str, int, int]], days: int) -> int:
-        """Count how many attempts happened in the last N days."""
-        if not rows:
+    def _get_attempts_last_days(self, user_id: int, days: int) -> int:
+        """Return attempts count for the last N days.
+
+        Notes:
+            Uses DatabaseManager.fetch_one(), which requires an active DB connection.
+        """
+        try:
+            row = db.fetch_one(
+                """
+                SELECT COUNT(*)
+                FROM quiz_attempts
+                WHERE user_id = %s
+                  AND created_at >= (NOW() - (%s || ' days')::interval)
+                """,
+                (user_id, int(days)),
+            )
+            return int(row[0]) if row and row[0] is not None else 0
+        except Exception:
+            logger.exception("Failed to compute attempts for last %s days", days)
             return 0
 
-        cutoff = datetime.now() - timedelta(days=days)
-        count = 0
-
-        for created_at, _, _, _ in rows:
-            try:
-                dt = datetime.strptime(created_at, "%Y-%m-%d %H:%M")
-            except Exception:
-                continue
-
-            if dt >= cutoff:
-                count += 1
-
-        return count
-
     def _populate_recent_activity(self, rows: list[tuple[str, str, int, int]]) -> None:
-        """Fill the recent activity list.
+        """Populate the recent activity list.
 
         Args:
             rows: (created_at_str, category_name, correct_count, total_questions)
         """
-        if self._recent_list_layout is None:
+        if self._activity_list is None:
             return
 
-        while self._recent_list_layout.count():
-            item = self._recent_list_layout.takeAt(0)
-            if item and item.widget():
-                item.widget().setParent(None)
+        self._clear_layout(self._activity_list)
 
         if not rows:
             empty = QLabel("No attempts yet. Start a quiz to see your activity here.")
-            empty.setStyleSheet("color: #7f8c8d; font-size: 12px;")
-            self._recent_list_layout.addWidget(empty)
+            empty.setStyleSheet("color: #7f8c8d; font-size: 13px;")
+            self._activity_list.addWidget(empty)
 
-            if self._recent_info_label is not None:
-                self._recent_info_label.setText("")
+            if self._activity_info is not None:
+                self._activity_info.setText("")
             return
 
         for created_at, category_name, correct_count, total_questions in rows:
             score_text = f"{correct_count}/{total_questions}"
-            card = self._build_recent_item(created_at, category_name, score_text)
-            self._recent_list_layout.addWidget(card)
+            card = self._create_activity_card(created_at=created_at, category=category_name, score=score_text)
+            self._activity_list.addWidget(card)
 
-        if self._recent_info_label is not None:
-            self._recent_info_label.setText(f"Showing last {len(rows)} attempt(s).")
+        if self._activity_info is not None:
+            self._activity_info.setText(f"Showing last {len(rows)} attempt(s).")
+
+    @staticmethod
+    def _clear_layout(layout: QVBoxLayout) -> None:
+        """Remove all widgets from a layout."""
+        while layout.count():
+            item = layout.takeAt(0)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
 
     # ---------------------------------------------------------------------
-    # Utilities
+    # Components
     # ---------------------------------------------------------------------
+    def _create_action_button(self, title: str, subtitle: str, color: str) -> QPushButton:
+        """Create a primary action button used in the 'Quick Actions' area."""
+        btn = QPushButton()
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        btn.setMinimumHeight(84)
+
+        # Rich text gives a nicer hierarchy without extra widgets
+        btn.setText(f"<div style='font-size:16px; font-weight:800;'>{title}</div>"
+                    f"<div style='font-size:12px; opacity:0.92;'>{subtitle}</div>")
+
+        btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                text-align: left;
+                padding: 18px;
+                background-color: {color};
+                color: white;
+                border: none;
+                border-radius: 14px;
+            }}
+            QPushButton:hover {{
+                background-color: {self._darken_color(color)};
+            }}
+            QPushButton:pressed {{
+                background-color: {self._darken_color(color, 0.80)};
+            }}
+            """
+        )
+        return btn
+
+    def _create_stat_card(self, title: str, value: str, footer: str, bg_color: str) -> tuple[QFrame, QLabel, QLabel]:
+        """Create a stat card with title, value, and a small footer line."""
+        frame = QFrame()
+        frame.setObjectName("statCard")
+        frame.setStyleSheet(
+            f"""
+            QFrame#statCard {{
+                background-color: {bg_color};
+                border: none;
+                border-radius: 14px;
+                padding: 16px;
+            }}
+            """
+        )
+        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        frame.setMinimumHeight(118)
+
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(6)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+                border: none;
+                color: rgba(255, 255, 255, 0.90);
+                font-size: 12px;
+                font-weight: 700;
+            }
+            """
+        )
+
+        value_label = QLabel(value)
+        value_label.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+                border: none;
+                color: white;
+                font-size: 30px;
+                font-weight: 900;
+            }
+            """
+        )
+
+        footer_label = QLabel(footer)
+        footer_label.setStyleSheet(
+            """
+            QLabel {
+                background: transparent;
+                border: none;
+                color: rgba(255, 255, 255, 0.88);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            """
+        )
+
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+        layout.addWidget(footer_label)
+        layout.addStretch(1)
+
+        return frame, value_label, footer_label
+
+    def _create_activity_card(self, created_at: str, category: str, score: str) -> QFrame:
+        """Create a compact activity card for one recent attempt."""
+        frame = QFrame()
+        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        frame.setMinimumHeight(UI.ACTIVITY_CARD_MIN_HEIGHT)
+        frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: white;
+                border: 2px solid #dfe6e9;
+                border-radius: 14px;
+            }
+            """
+        )
+
+        outer = QHBoxLayout(frame)
+        outer.setContentsMargins(14, 10, 14, 10)
+        outer.setSpacing(12)
+
+        left_col = QVBoxLayout()
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.setSpacing(4)
+
+        date_lbl = QLabel(created_at)
+        date_lbl.setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: 700;")
+
+        cat_lbl = QLabel(category)
+        cat_lbl.setStyleSheet("color: #2c3e50; font-size: 14px; font-weight: 900;")
+        cat_lbl.setWordWrap(True)
+
+        left_col.addWidget(date_lbl)
+        left_col.addWidget(cat_lbl)
+
+        pill = QLabel(score)
+        pill.setAlignment(Qt.AlignCenter)
+        pill.setMinimumWidth(UI.ACTIVITY_SCORE_PILL_MIN_WIDTH)
+        pill.setStyleSheet(
+            """
+            QLabel {
+                background-color: #ecf0f1;
+                border: 1px solid #d0d7de;
+                border-radius: 14px;
+                padding: 8px 12px;
+                font-size: 13px;
+                font-weight: 900;
+                color: #2c3e50;
+            }
+            """
+        )
+
+        outer.addLayout(left_col, 1)
+        outer.addWidget(pill, 0, Qt.AlignRight | Qt.AlignVCenter)
+
+        return frame
+
     @staticmethod
     def _darken_color(hex_color: str, factor: float = 0.9) -> str:
         """Return a darker version of a hex color."""
@@ -624,4 +629,6 @@ class DashboardWidget(QWidget):
 
         r, g, b = int(r * factor), int(g * factor), int(b * factor)
         return f"#{r:02x}{g:02x}{b:02x}"
+
+
 
