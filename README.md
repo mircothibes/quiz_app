@@ -23,21 +23,27 @@ This project was built to practice and showcase real-world fundamentals:
 
 ## ✅ Features
 
-- **Login** (user authentication)
-- **Categories** list (load from database)
-- **Quiz flow**
-  - next/previous navigation
-  - progress bar
-  - results screen
-- **Dashboard**
-  - total attempts
-  - best score
-  - last score
-  - recent attempts table
-- **Admin — Manage Questions**
-  - create / edit / delete questions inside existing categories
-- **Question limit**
-  - choose how many questions to load before starting a quiz
+### Authentication
+- User login (username + password)
+- Create account (unique username enforced by DB)
+
+### Quiz Experience
+- Category selection
+- Configurable question limit
+- Quiz flow (progress + submit)
+- Results screen
+
+### Dashboard
+- Quick actions (Start Quiz, Admin)
+- Stats overview:
+  - Total Attempts
+  - Best Score
+  - Last Score
+- Recent Activity list (latest attempts)
+
+### Admin Panel
+- Create / edit / delete quiz questions
+- Questions stored in PostgreSQL and available immediately
 
 ---
 
