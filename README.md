@@ -9,6 +9,18 @@ It supports authentication, category-based quizzes, attempt history, and an **Ad
 
 ---
 
+## ✨ Overview
+
+This project was built to practice and showcase real-world fundamentals:
+
+- Desktop GUI development with **PyQt5**
+- Relational persistence with **PostgreSQL**
+- Clean modular UI structure (pages/widgets)
+- Basic admin CRUD operations
+- User-based statistics and recent activity
+
+---
+
 ## ✅ Features
 
 - **Login** (user authentication)
@@ -42,6 +54,8 @@ It supports authentication, category-based quizzes, attempt history, and an **Ad
 
 ```text
 quiz_app/
+  assets/
+    quiz_app.png
   ui/
     admin.py
     categories.py
