@@ -103,8 +103,9 @@ python main.py
 
 ## Admin Panel
 
-- Use “Manage Questions” from the dashboard to add more questions to existing categories.
-- New questions are saved to PostgreSQL and immediately available in quizzes.
+- Access the Admin Panel via Manage Questions in the Dashboard.
+- You can add/edit/delete questions inside existing categories.
+- Changes are persisted in PostgreSQL and reflected in quizzes immediately.
 
 ---
 
