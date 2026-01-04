@@ -1,7 +1,7 @@
 # 🧠 Advanced Quiz App (PyQt5 + PostgreSQL)
 
 <p align="center">
-  <img src="assets/readme_logo.png" alt="DevQuiz Logo" height="260" />
+  <img src="assets/readme_logo.png" alt="DevQuiz Logo" height="420" />
 </p>
 
 A desktop **Quiz Application** built with **Python + PyQt5** and backed by **PostgreSQL** (Docker).  
