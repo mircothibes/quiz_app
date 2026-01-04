@@ -1,5 +1,9 @@
 # 🧠 Advanced Quiz App (PyQt5 + PostgreSQL)
 
+<p align="center">
+  <img src="assets/quiz_app.png" alt="DevQuiz Logo" width="420">
+</p>
+
 A desktop **Quiz Application** built with **Python + PyQt5** and backed by **PostgreSQL** (Docker).  
 It supports authentication, category-based quizzes, attempt history, and an **Admin panel** to manage questions.
 
