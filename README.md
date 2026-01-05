@@ -59,8 +59,8 @@ This project was built to practice and showcase real-world fundamentals:
 ## 📁 Project Structure
 
 ```text
-README.md
 quiz_app/
+  README.md  
   assets/
     quiz_app.png
   ui/
