@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
-
-from pathlib import Path
 from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
 from db import db
 from ui.admin import AdminWidget
@@ -19,7 +18,25 @@ from ui.results import ResultsWidget
 
 logger = logging.getLogger(__name__)
 
-UserData = Tuple[int, str]
+UserData = Tuple[int, str]  # (user_id, username)
+
+
+def resource_path(relative_path: str) -> str:
+    """Return an absolute path to a resource.
+
+    This works both:
+    - in development (running `python main.py`)
+    - in PyInstaller builds (where files are extracted to a temp folder)
+
+    Args:
+        relative_path: Path relative to the project root (e.g., "assets/quiz_app.png").
+
+    Returns:
+        Absolute path to the resource as a string.
+    """
+    # PyInstaller sets sys._MEIPASS to the extraction folder at runtime
+    base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return str(base_dir / relative_path)
 
 
 class QuizApp(QMainWindow):
@@ -52,7 +69,7 @@ class QuizApp(QMainWindow):
         """Create and register all pages.
 
         Notes:
-            The dashboard is created after login because it depends on the username/user_id.
+            The dashboard is created after login because it depends on username/user_id.
         """
         self.setWindowTitle("Advanced Quiz App")
         self.setGeometry(100, 100, 900, 700)
@@ -71,7 +88,7 @@ class QuizApp(QMainWindow):
 
     def _wire_signals(self) -> None:
         """Connect UI signals to navigation handlers."""
-        # Login (UPDATED: LoginWidget emits (username: str, user_id: int))
+        # Login
         self.login_page.login_successful.connect(self.on_login_success)
 
         # Categories
@@ -98,7 +115,11 @@ class QuizApp(QMainWindow):
     # Infrastructure
     # ---------------------------------------------------------------------
     def ensure_database_connection(self) -> bool:
-        """Ensure PostgreSQL is reachable, show a user-friendly error otherwise."""
+        """Ensure PostgreSQL is reachable, otherwise show a user-friendly error.
+
+        Returns:
+            True if the connection is available, False otherwise.
+        """
         if db.connect():
             return True
 
@@ -116,8 +137,9 @@ class QuizApp(QMainWindow):
     def on_login_success(self, username: str, user_id: int) -> None:
         """Handle successful login and open the dashboard.
 
-        Notes:
-            LoginWidget emits (username, user_id).
+        Args:
+            username: Authenticated username.
+            user_id: Authenticated user id.
         """
         self.current_user = (user_id, username)
 
@@ -193,7 +215,6 @@ class QuizApp(QMainWindow):
 
             per_question.append((q_id, selected_letter, correct_letter, is_correct))
 
-        # Persist attempt if user is logged in and the quiz has valid data
         if user_id is not None and category_id > 0 and total_questions > 0:
             attempt_id = db.create_quiz_attempt(
                 user_id=user_id,
@@ -213,7 +234,6 @@ class QuizApp(QMainWindow):
                         is_correct=is_correct,
                     )
 
-        # Show results page
         self.results_page.load_results(results)
         self.stack.setCurrentWidget(self.results_page)
 
@@ -221,7 +241,7 @@ class QuizApp(QMainWindow):
         """Restart quiz for the same category.
 
         Note:
-            If you want to preserve the last chosen 'limit', store it in the app state.
+            If you want to preserve the last chosen 'limit', store it in app state.
         """
         self.quiz_page.load_quiz(category_id, category_name, limit=10)
         self.stack.setCurrentWidget(self.quiz_page)
@@ -247,16 +267,24 @@ def configure_logging() -> None:
 
 
 def main() -> int:
-    """Application entry point."""
+    """Application entry point.
+
+    Returns:
+        Process exit code (0 on normal exit, non-zero on error).
+    """
     configure_logging()
 
     app = QApplication(sys.argv)
-    
-    icon_path = Path(__file__).resolve().parent / "assets" / "quiz_app.png"
-    app.setWindowIcon(QIcon(str(icon_path)))
+
+    icon_path = resource_path("assets/quiz_app.png")
+    app_icon = QIcon(icon_path)
+
+    # Set application-level icon (used across windows/dialogs)
+    app.setWindowIcon(app_icon)
 
     window = QuizApp()
-    window.setWindowIcon(QIcon(str(icon_path)))
+    # Ensure the main window also has the icon explicitly (some OS/themes require it)
+    window.setWindowIcon(app_icon)
 
     if not window.ensure_database_connection():
         return 1
@@ -267,3 +295,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
