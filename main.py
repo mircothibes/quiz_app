@@ -6,6 +6,9 @@ from typing import Any, Optional, Tuple
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
+from pathlib import Path
+from PyQt5.QtGui import QIcon
+
 from db import db
 from ui.admin import AdminWidget
 from ui.categories import CategoryWidget
@@ -248,7 +251,12 @@ def main() -> int:
     configure_logging()
 
     app = QApplication(sys.argv)
+    
+    icon_path = Path(__file__).resolve().parent / "assets" / "quiz_app.png"
+    app.setWindowIcon(QIcon(str(icon_path)))
+
     window = QuizApp()
+    window.setWindowIcon(QIcon(str(icon_path)))
 
     if not window.ensure_database_connection():
         return 1
