@@ -1,34 +1,89 @@
-from dataclasses import dataclass
-import os
+from __future__ import annotations
 
-from dotenv import load_dotenv
+import os
+import sys
+from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
-class DatabaseConfig:
-    host: str
-    port: int
-    name: str
-    user: str
-    password: str
+class AppConfig:
+    """Application configuration loaded from environment variables and/or a .env file."""
+    db_name: str
+    db_user: str
+    db_password: str
+    db_host: str = "localhost"
+    db_port: int = 5432
 
 
-def load_config() -> DatabaseConfig:
-    load_dotenv()
+def executable_dir() -> Path:
+    """Return the directory where the app is running from.
 
-    host = os.getenv("DB_HOST", "localhost")
-    port_str = os.getenv("DB_PORT", "5432")
-    name = os.getenv("DB_NAME")
-    user = os.getenv("DB_USER")
-    password = os.getenv("DB_PASSWORD")
+    - Dev mode: directory of this file (project).
+    - PyInstaller: directory containing the executable.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
 
-    if not name or not user or not password:
-        raise ValueError("Missing required database environment variables: DB_NAME, DB_USER, DB_PASSWORD")
 
-    return DatabaseConfig(
-        host=host,
-        port=int(port_str),
-        name=name,
-        user=user,
-        password=password,
+def load_env_file(env_path: Path) -> None:
+    """Load a .env file into os.environ (no external dependencies).
+
+    Rules:
+    - Ignores empty lines and comments (#).
+    - Supports KEY=VALUE with optional quotes.
+    - Does not override variables already present in os.environ.
+    """
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def load_config() -> AppConfig:
+    """Load config, preferring a .env next to the executable.
+
+    Search order:
+      1) <executable_dir>/.env
+      2) <cwd>/.env
+
+    Raises:
+        ValueError: if required variables are missing after loading.
+    """
+    candidates = [
+        executable_dir() / ".env",
+        Path.cwd() / ".env",
+    ]
+
+    for env_path in candidates:
+        load_env_file(env_path)
+
+    required = ("DB_NAME", "DB_USER", "DB_PASSWORD")
+    missing = [k for k in required if not os.getenv(k)]
+    if missing:
+        raise ValueError(
+            f"Missing required database environment variables: {', '.join(missing)}"
+        )
+
+    return AppConfig(
+        db_name=os.environ["DB_NAME"],
+        db_user=os.environ["DB_USER"],
+        db_password=os.environ["DB_PASSWORD"],
+        db_host=os.getenv("DB_HOST", "localhost"),
+        db_port=int(os.getenv("DB_PORT", "5432")),
     )
+
