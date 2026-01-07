@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
 )
 
 from db import db
+from app_paths import resource_path
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ class LoginWidget(QWidget):
         self.logo_label.setAlignment(Qt.AlignCenter)
         self.logo_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-        logo_path = Path(__file__).resolve().parents[1] / "assets" / C.LOGO_FILENAME
+        logo_path = resource_path("assets", C.LOGO_FILENAME)  
 
         img = QImage(str(logo_path))
         if img.isNull():
