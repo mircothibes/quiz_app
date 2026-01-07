@@ -8,6 +8,8 @@ from typing import Any, Optional, Tuple
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
+from app_paths import app_icon_path
+
 from db import db
 from ui.admin import AdminWidget
 from ui.categories import CategoryWidget
@@ -275,16 +277,12 @@ def main() -> int:
     configure_logging()
 
     app = QApplication(sys.argv)
-
-    icon_path = resource_path("assets/quiz_app.png")
-    app_icon = QIcon(icon_path)
-
-    # Set application-level icon (used across windows/dialogs)
-    app.setWindowIcon(app_icon)
+   
+    icon = QIcon(app_icon_path()) 
+    app.setWindowIcon(icon)
 
     window = QuizApp()
-    # Ensure the main window also has the icon explicitly (some OS/themes require it)
-    window.setWindowIcon(app_icon)
+    window.setWindowIcon(icon)
 
     if not window.ensure_database_connection():
         return 1
