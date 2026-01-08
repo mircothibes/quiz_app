@@ -58,18 +58,22 @@ def load_config() -> AppConfig:
     """Load config, preferring a .env next to the executable.
 
     Search order:
-      1) <executable_dir>/.env
-      2) <cwd>/.env
+      1) <executable_dir>/.env              (PyInstaller onedir / distribution)
+      2) <sys._MEIPASS>/.env                (PyInstaller onefile)
+      3) <cwd>/.env                         (development fallback)
 
     Raises:
         ValueError: if required variables are missing after loading.
     """
+    meipass = getattr(sys, "_MEIPASS", None)
+
     candidates = [
         executable_dir() / ".env",
+        Path(meipass) / ".env" if meipass else None,
         Path.cwd() / ".env",
     ]
 
-    for env_path in candidates:
+    for env_path in [p for p in candidates if p is not None]:
         load_env_file(env_path)
 
     required = ("DB_NAME", "DB_USER", "DB_PASSWORD")
