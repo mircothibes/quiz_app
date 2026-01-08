@@ -55,7 +55,7 @@ class AdminWidget(QWidget):
         self._status: Optional[QLabel] = None
 
         self._build_ui()
-        self.refresh()
+        
 
     def _build_ui(self) -> None:
         """Build the admin UI layout."""
