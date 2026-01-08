@@ -7,7 +7,6 @@ import os
 from typing import Any, Optional, Sequence
 
 import psycopg2
-from psycopg2 import OperationalError
 from psycopg2.extensions import connection as PgConnection
 
 from config import load_config
@@ -31,30 +30,35 @@ class DatabaseManager:
     # ---------------------------------------------------------------------
     # Connection management
     # ---------------------------------------------------------------------
+    def is_connected(self) -> bool:
+        """Return True if there is an open connection."""
+        return self._conn is not None and getattr(self._conn, "closed", 1) == 0
+
     def connect(self) -> bool:
-        """Open a connection to PostgreSQL.
+        """Connect to PostgreSQL using validated config values.
 
         Returns:
             True if connected (or already connected), False otherwise.
         """
-        if self._conn is not None and not self._conn.closed:
+        if self.is_connected():
             return True
 
         try:
             cfg = load_config()
+
             self._conn = psycopg2.connect(
-                host=cfg.db_host,
-                port=cfg.db_port,
-                name=cfg.db_name,
+                dbname=cfg.db_name,
                 user=cfg.db_user,
                 password=cfg.db_password,
-                connect_timeout=5,
-                application_name="quiz_app",
+                host=cfg.db_host,
+                port=cfg.db_port,
             )
-            self._conn.autocommit = False
+            self._conn.autocommit = True
+
             logger.info("Connected to PostgreSQL database: %s", cfg.db_name)
             return True
-        except (OperationalError, ValueError) as exc:
+
+        except Exception as exc:
             logger.exception("Database connection failed: %s", exc)
             self._conn = None
             return False
@@ -65,25 +69,26 @@ class DatabaseManager:
             return
 
         try:
-            if not self._conn.closed:
+            if getattr(self._conn, "closed", 1) == 0:
                 self._conn.close()
                 logger.info("Database connection closed")
         finally:
             self._conn = None
 
-    def is_connected(self) -> bool:
-        """Return True if there is an open connection."""
-        return self._conn is not None and not self._conn.closed
-
     def _ensure_connection(self) -> None:
-        """Raise if there is no active DB connection."""
-        if not self.is_connected():
+        """Ensure an active DB connection exists (auto-reconnect if needed)."""
+        if self.is_connected():
+            return
+
+        if not self.connect():
             raise RuntimeError("No database connection. Call db.connect() first.")
 
     # ---------------------------------------------------------------------
     # Generic query helpers
     # ---------------------------------------------------------------------
-    def fetch_one(self, query: str, params: Optional[Sequence[Any]] = None) -> Optional[tuple[Any, ...]]:
+    def fetch_one(
+        self, query: str, params: Optional[Sequence[Any]] = None
+    ) -> Optional[tuple[Any, ...]]:
         """Run a SELECT query and return a single row (or None)."""
         self._ensure_connection()
         assert self._conn is not None
@@ -96,7 +101,9 @@ class DatabaseManager:
             logger.exception("fetch_one failed: %s", exc)
             return None
 
-    def fetch_all(self, query: str, params: Optional[Sequence[Any]] = None) -> list[tuple[Any, ...]]:
+    def fetch_all(
+        self, query: str, params: Optional[Sequence[Any]] = None
+    ) -> list[tuple[Any, ...]]:
         """Run a SELECT query and return all rows (possibly empty)."""
         self._ensure_connection()
         assert self._conn is not None
@@ -110,10 +117,10 @@ class DatabaseManager:
             return []
 
     def execute(self, query: str, params: Optional[Sequence[Any]] = None) -> bool:
-        """Run an INSERT/UPDATE/DELETE query and commit.
+        """Run an INSERT/UPDATE/DELETE query.
 
         Returns:
-            True on success, False on failure (rollback is performed).
+            True on success, False on failure (rollback is attempted).
         """
         self._ensure_connection()
         assert self._conn is not None
@@ -121,12 +128,12 @@ class DatabaseManager:
         try:
             with self._conn.cursor() as cur:
                 cur.execute(query, params)
-            self._conn.commit()
             return True
         except Exception as exc:
             logger.exception("execute failed: %s", exc)
             try:
-                self._conn.rollback()
+                if self._conn is not None:
+                    self._conn.rollback()
             except Exception:
                 logger.exception("rollback failed")
             return False
@@ -192,7 +199,6 @@ class DatabaseManager:
                 )
                 row = cur.fetchone()
 
-            self._conn.commit()
             return int(row[0]) if row else None
 
         except Exception as exc:
@@ -372,9 +378,9 @@ class DatabaseManager:
                     (category_id, question_text, correct_answer, option_a, option_b, option_c, option_d),
                 )
                 row = cur.fetchone()
-            self._conn.commit()
 
             return int(row[0]) if row else None
+
         except Exception as exc:
             logger.exception("create_question failed: %s", exc)
             try:
@@ -425,11 +431,7 @@ class DatabaseManager:
         correct_count: int,
         answered_count: int,
     ) -> Optional[int]:
-        """Create a quiz attempt and return its id.
-
-        Returns:
-            attempt_id (int) on success, None on failure.
-        """
+        """Create a quiz attempt and return its id."""
         self._ensure_connection()
         assert self._conn is not None
 
@@ -445,11 +447,7 @@ class DatabaseManager:
                 )
                 row = cur.fetchone()
 
-            self._conn.commit()
-
-            if not row:
-                return None
-            return int(row[0])
+            return int(row[0]) if row else None
 
         except Exception as exc:
             logger.exception("create_quiz_attempt failed: %s", exc)
@@ -467,11 +465,7 @@ class DatabaseManager:
         correct_letter: str,
         is_correct: bool,
     ) -> bool:
-        """Persist a single answer row for an attempt.
-
-        Returns:
-            True if the insert succeeded, False otherwise.
-        """
+        """Persist a single answer row for an attempt."""
         return self.execute(
             """
             INSERT INTO quiz_attempt_answers (attempt_id, question_id, selected_letter, correct_letter, is_correct)
@@ -481,12 +475,7 @@ class DatabaseManager:
         )
 
     def get_recent_attempts(self, user_id: int, limit: int = 5) -> list[tuple[str, str, int, int]]:
-        """Return recent attempts for a user.
-
-        Returns:
-            A list of tuples:
-            (created_at_str, category_name, correct_count, total_questions)
-        """
+        """Return recent attempts for a user."""
         rows = self.fetch_all(
             """
             SELECT
