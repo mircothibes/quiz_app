@@ -43,16 +43,16 @@ class DatabaseManager:
         try:
             cfg = load_config()
             self._conn = psycopg2.connect(
-                host=cfg.host,
-                port=cfg.port,
-                dbname=cfg.name,
-                user=cfg.user,
-                password=cfg.password,
+                host=cfg.db_host,
+                port=cfg.db_port,
+                name=cfg.db_name,
+                user=cfg.db_user,
+                password=cfg.db_password,
                 connect_timeout=5,
                 application_name="quiz_app",
             )
             self._conn.autocommit = False
-            logger.info("Connected to PostgreSQL database: %s", cfg.name)
+            logger.info("Connected to PostgreSQL database: %s", cfg.db_name)
             return True
         except (OperationalError, ValueError) as exc:
             logger.exception("Database connection failed: %s", exc)
