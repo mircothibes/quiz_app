@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
+from PyQt5.QtWidgets import QWidget, QApplication, QMainWindow, QMessageBox, QStackedWidget
 
 from app_paths import app_icon_path
 
@@ -277,18 +277,28 @@ def main() -> int:
     configure_logging()
 
     app = QApplication(sys.argv)
-   
-    icon = QIcon(app_icon_path()) 
-    app.setWindowIcon(icon)
 
-    window = QuizApp()
-    window.setWindowIcon(icon)
+    icon_path = Path(__file__).resolve().parent / "assets" / "quiz_app.png"
+    app_icon = QIcon(str(icon_path))
+    app.setWindowIcon(app_icon)
 
-    if not window.ensure_database_connection():
+    # Connect to DB BEFORE building any UI pages that query the database.
+    if not db.connect():
+        parent = QWidget()
+        parent.setWindowIcon(app_icon)
+        QMessageBox.critical(
+            parent,    
+            "Database Error",
+            "Could not connect to PostgreSQL.\n\n"
+            "Ensure Docker is running and the database container is up.",
+        )
         return 1
 
+    window = QuizApp()
+    window.setWindowIcon(app_icon)
     window.show()
-    return app.exec_()
+
+    return app.exec_()   
 
 
 if __name__ == "__main__":
