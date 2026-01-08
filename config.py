@@ -19,12 +19,24 @@ class AppConfig:
 def executable_dir() -> Path:
     """Return the directory where the app is running from.
 
-    - Dev mode: directory of this file (project).
-    - PyInstaller: directory containing the executable.
+    - Dev mode: directory of this file (project folder).
+    - PyInstaller onedir: directory containing the executable.
     """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
+
+
+def runtime_root() -> Path:
+    """Return the runtime root folder.
+
+    - PyInstaller onefile: sys._MEIPASS (temporary extraction folder)
+    - Otherwise: executable_dir()
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(meipass)
+    return executable_dir()
 
 
 def load_env_file(env_path: Path) -> None:
@@ -40,10 +52,7 @@ def load_env_file(env_path: Path) -> None:
 
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        if "=" not in line:
+        if not line or line.startswith("#") or "=" not in line:
             continue
 
         key, value = line.split("=", 1)
@@ -54,26 +63,57 @@ def load_env_file(env_path: Path) -> None:
             os.environ[key] = value
 
 
+def _env_candidates() -> list[Path]:
+    """Return .env candidate paths in priority order.
+
+    Priority is important because we do NOT override existing os.environ values.
+    We load the most likely location first.
+    """
+    exe_dir = executable_dir()
+    root = runtime_root()
+
+    candidates: list[Path] = []
+
+    # 1) Most common on Linux/WSL PyInstaller onedir output:
+    #    dist/<AppName>/_internal/.env
+    candidates.append(exe_dir / "_internal" / ".env")
+
+    # 2) Next to the executable (less common on Linux/WSL but valid)
+    candidates.append(exe_dir / ".env")
+
+    # 3) PyInstaller onefile extraction folder
+    candidates.append(root / ".env")
+    candidates.append(root / "_internal" / ".env")
+
+    # 4) Dev fallback: current working directory
+    candidates.append(Path.cwd() / ".env")
+
+    # De-duplicate while preserving order
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for p in candidates:
+        s = str(p)
+        if s not in seen:
+            seen.add(s)
+            unique.append(p)
+
+    return unique
+
+
 def load_config() -> AppConfig:
-    """Load config, preferring a .env next to the executable.
+    """Load config from environment and/or a .env file.
 
     Search order:
-      1) <executable_dir>/.env              (PyInstaller onedir / distribution)
-      2) <sys._MEIPASS>/.env                (PyInstaller onefile)
-      3) <cwd>/.env                         (development fallback)
+      1) <executable_dir>/_internal/.env    (PyInstaller onedir on Linux/WSL)
+      2) <executable_dir>/.env
+      3) <sys._MEIPASS>/.env               (PyInstaller onefile)
+      4) <sys._MEIPASS>/_internal/.env
+      5) <cwd>/.env                        (development fallback)
 
     Raises:
-        ValueError: if required variables are missing after loading.
+        ValueError: If required variables are missing after loading.
     """
-    meipass = getattr(sys, "_MEIPASS", None)
-
-    candidates = [
-        executable_dir() / ".env",
-        Path(meipass) / ".env" if meipass else None,
-        Path.cwd() / ".env",
-    ]
-
-    for env_path in [p for p in candidates if p is not None]:
+    for env_path in _env_candidates():
         load_env_file(env_path)
 
     required = ("DB_NAME", "DB_USER", "DB_PASSWORD")
@@ -90,4 +130,5 @@ def load_config() -> AppConfig:
         db_host=os.getenv("DB_HOST", "localhost"),
         db_port=int(os.getenv("DB_PORT", "5432")),
     )
+
 
