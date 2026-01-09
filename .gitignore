@@ -1,8 +1,40 @@
+# --- Python ---
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# --- Virtualenv ---
+.venv/
+venv/
+ENV/
+env/
+
+# --- OS / Editor ---
 .DS_Store
-venv/
-*.db
-venv/
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Environment files ---
 .env
+.env.*
+!.env.example
+
+# --- PyInstaller ---
+build/
+dist/
+*.spec.bak
+*.manifest
+*.toc
+
+# --- Packaging ---
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheelhouse/
