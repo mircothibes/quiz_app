@@ -191,14 +191,8 @@ class QuizWidget(QWidget):
         if selected is not None:
             self.answers[q_id] = selected
 
-    def load_quiz(self, category_id: int, category_name: str, limit: int | None = None) -> None:
-        """Load quiz for a category.
-
-        Args:
-        category_id: Category identifier.
-        category_name: Category display name.
-        limit: Optional number of questions to load (randomized on DB side).
-        """
+    def load_quiz(self, category_id: int, category_name: str) -> None:
+        """Load quiz for a category."""
         self.category_id = category_id
         self.category_name = category_name
         self.category_label.setText(f"🎯 Quiz: {category_name}")
@@ -219,7 +213,7 @@ class QuizWidget(QWidget):
                 self.back_clicked.emit()
                 return
 
-        self.questions = db.get_questions_by_category(category_id, limit)
+        self.questions = db.get_questions_by_category(category_id)
 
         if not self.questions:
             QMessageBox.warning(
