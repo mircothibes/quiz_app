@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class LoginWidget(QWidget):
     """Login form widget."""
 
-    # Emits (user_id, username) on success
+    # Emits a user payload (dict/tuple) on success
     login_successful = pyqtSignal(object)
 
     def __init__(self) -> None:
