@@ -278,7 +278,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
 
-    icon_path = Path(__file__).resolve().parent / "assets" / "quiz_app.png"
+    icon_path = Path()
     app_icon = QIcon(str(icon_path))
     app.setWindowIcon(app_icon)
 
