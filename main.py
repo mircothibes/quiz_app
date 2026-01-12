@@ -187,7 +187,24 @@ def main() -> int:
     app = QApplication(sys.argv)
     window = QuizApp()
 
+<<<<<<< HEAD
     if not window.test_database_connection():
+=======
+    icon_path = Path()
+    app_icon = QIcon(str(icon_path))
+    app.setWindowIcon(app_icon)
+
+    # Connect to DB BEFORE building any UI pages that query the database.
+    if not db.connect():
+        parent = QWidget()
+        parent.setWindowIcon(app_icon)
+        QMessageBox.critical(
+            parent,    
+            "Database Error",
+            "Could not connect to PostgreSQL.\n\n"
+            "Ensure Docker is running and the database container is up.",
+        )
+>>>>>>> release/from-last-good
         return 1
 
     window.show()
