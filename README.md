@@ -120,6 +120,16 @@ python main.py
 
 ---
 
+## Recovery / Restore Point
+
+A stable restore point is available via the Git tag: `pretty-ui-backup` (commit `2d3a3c8`).
+
+If the UI structure gets inconsistent again, you can safely return to this point:
+- `git checkout pretty-ui-backup`
+- or create a branch from it: `git switch -c rescue/from-pretty-ui pretty-ui-backup`
+
+---
+
 ## 🤝 Contributing
 Pull requests are welcome! For major changes, please open an issue to discuss what you'd like to change.
 
