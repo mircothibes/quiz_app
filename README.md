@@ -119,7 +119,10 @@ python main.py
 - Export/import question sets (JSON)
 
 ---
+
 ## Recovery / Restore Point
+
+A stable restore point is available via the Git tag: `pretty-ui-backup` (commit `2d3a3c8`).
 
 ---
 
