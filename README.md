@@ -9,6 +9,15 @@ It supports authentication, category-based quizzes, attempt history, and an **Ad
 
 ---
 
+## UI Preview
+
+<p align="center">
+  <img src="assets/screenshots/devquiz-ui.png" alt="DevQuiz UI (Login + Dashboard)" width="900">
+</p>
+
+
+---
+
 ## ✨ Overview
 
 This project was built to practice and showcase real-world fundamentals:
