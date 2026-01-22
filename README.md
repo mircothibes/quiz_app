@@ -9,12 +9,11 @@ It supports authentication, category-based quizzes, attempt history, and an **Ad
 
 ---
 
-## UI Preview
+## Screenshot
 
 <p align="center">
-  <img src="assets/screenshots/devquiz-ui.png" alt="DevQuiz UI (Login + Dashboard)" width="900">
+  <img src="assets/screenshots/app.png" alt="DevQuiz UI (Login + Dashboard)" width="1000">
 </p>
-
 
 ---
 
