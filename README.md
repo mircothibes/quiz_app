@@ -11,6 +11,8 @@ It supports authentication, category-based quizzes, attempt history, and an **Ad
 
 ## Screenshot
 
+A quick preview of the current UI:
+
 <p align="center">
   <img src="assets/screenshots/app.png" alt="DevQuiz UI (Login + Dashboard)" width="1000">
 </p>
