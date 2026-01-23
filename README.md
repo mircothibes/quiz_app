@@ -155,7 +155,7 @@ MIT License — feel free to use this project for learning or production.
 ## 🧑‍💻 Author
 Marcos Vinicius Thibes Kemer
 
+---
 
-## Release
-- v0.1.0-linux-stable (Linux stable build)
+
 
