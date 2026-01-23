@@ -12,6 +12,8 @@ It supports authentication, category-based quizzes, attempt history, and an **Ad
 ## Screenshot
 
 A quick preview of the current UI:
+- **Login screen (left):** user authentication to access the platform
+- **Dashboard (right):** main hub after login, including quick actions to start a quiz or manage questions (admin), plus statistics and recent activity history.
 
 <p align="center">
   <img src="assets/screenshots/app.png" alt="DevQuiz UI (Login + Dashboard)" width="1000">
