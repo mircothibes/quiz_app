@@ -126,9 +126,6 @@ python main.py
 
 - Improve responsive layout (large vs small window behavior)
 - Add validation/messages in Admin form
-- Randomize questions + shuffle answers
-    - Add user roles (admin vs regular user)
-
 
 ---
 
