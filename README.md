@@ -122,13 +122,6 @@ python main.py
 
 ---
 
-## 📌 Roadmap (Next)
-
-- Improve responsive layout (large vs small window behavior)
-- Add validation/messages in Admin form
-
----
-
 ## Recovery / Restore Point
 
 A stable restore point is available via the Git tag: `pretty-ui-backup` (commit `2d3a3c8`).
